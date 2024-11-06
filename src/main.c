@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 
 // CamelCase for struct
@@ -15,8 +16,9 @@
 
 
 #define MAX_LENGHT_USERNAME 30
-#define BOT_MODE "--bot"
-#define MANUAL_MODE "--manuel"
+#define DEFAULT_BUFFER_SIZE 1000
+#define BOT_MODE           "--bot"
+#define MANUAL_MODE        "--manuel"
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
 #define ANSI_COLOR_YELLOW  "\x1b[33m"
@@ -26,9 +28,29 @@
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
 
+void initializePipesNames(char* pipe_user1_user2, char* pipe_user2_user1, const char* user1, const char* user2);
+void myHandler(int received_signal);
 void parseUsernames(char* argv[], int argv_index, const char** user1, const char** user2, const char* special_name);
 int checkParseArgv(int argc, char* argv[], bool* bot_mode, bool* manual_mode, const char** user1, const char** user2);
-void myHandler(int received_signal);
+
+
+
+void initializePipesNames(char* pipe_user1_user2, char* pipe_user2_user1, const char* user1, const char* user2) {
+   // Pourquoi utiliser snprintf et non sprintf ?
+   // Meilleure version de sprintf car on se limite avec une taille de buffer.
+   // Pas avoir de depassements (buffer overflows).
+   // Tronque la sortie (coupe les donnees) en cas de buffer overflows.
+   snprintf(pipe_user1_user2, DEFAULT_BUFFER_SIZE, "/tmp/%s-%s.chat", user1, user2);
+   snprintf(pipe_user2_user1, DEFAULT_BUFFER_SIZE, "/tmp/%s-%s.chat", user2, user1);
+}
+
+
+void myHandler(int received_signal) {
+   if (received_signal == SIGINT) {
+      printf("The user pressed CTRL+C.\n");
+      exit(0);
+   }
+}
 
 
 void parseUsernames(char* argv[], int argv_index, const char** user1, const char** user2, const char* special_name) {
@@ -104,25 +126,38 @@ int checkParseArgv(int argc, char* argv[], bool* bot_mode, bool* manual_mode, co
 }
 
 
-void myHandler(int received_signal) {
-   if (received_signal == SIGINT) {
-      printf("The user pressed CTRL+C.\n");
-      exit(0);
-   }
-}
-
-
 int main(int argc, char* argv[]) {
    bool bot_mode = false;
-   bool manual_mode= false;
+   bool manual_mode = false;
+
    const char* user1;
    const char* user2;
+
    int result_checking = checkParseArgv(argc, argv, &bot_mode, &manual_mode, &user1, &user2);
    if (result_checking != 0) {
       return result_checking;
    }
+
    if (manual_mode) {
       signal(SIGINT, myHandler);
    }
+
+   char pipe_user1_user2[DEFAULT_BUFFER_SIZE];
+   char pipe_user2_user1[DEFAULT_BUFFER_SIZE];
+
+   initializePipesNames(pipe_user1_user2, pipe_user2_user1, user1, user2);
+
+   // MAYBE ADD FUNCTION TO HANDLE UNLINKING WITH AN ACCESS METHOD
+   unlink(pipe_user1_user2);
+   unlink(pipe_user2_user1);
+
+   // printf("pipe 1 : %s\n", pipe_user1_user2);
+   // printf("pipe 2 : %s\n", pipe_user2_user1);
+
+   if (mkfifo(pipe_user1_user2, 0666) == -1 || mkfifo(pipe_user2_user1, 0666) == -1) {
+      perror("mkfifo() error ; pipe hasn't been created.\n");
+      return 1;
+   }
+
    return 0;
 }
