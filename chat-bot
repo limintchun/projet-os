@@ -1,0 +1,9 @@
+#!/bin/bash
+#read -p "test input "
+#echo "result input : $REPLY"
+
+# on peut exéc le prog direct dans le script 
+# accès des paramètres donnés au programme grâce à ces variable, $0 correspond au nom du programme
+option="--bot"
+
+./yup $1 $2 $option
