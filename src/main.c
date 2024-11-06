@@ -47,8 +47,8 @@ void affichage(char username[], char message[], bool modificationActivate) {
 
 void parent(int write_fd) {
 
-   printf("je suis le père");
-   printf("Veuillez entrer votre message : ");
+   printf("je suis le père\n");
+   printf("vous pouvez débuter votre discussion\n");
 
    char buffer[256];
    while (fgets(buffer, sizeof(buffer), stdin) != NULL) {
@@ -103,12 +103,12 @@ int main(int argc, char* argv[]) {
    char receiver_fifo[256];
    sprintf(sender_fifo, "/tmp/%s-%s.chat", sender, receiver);
    sprintf(receiver_fifo, "/tmp/%s-%s.chat", receiver, sender);
-   printf("%s, %s", sender_fifo, receiver_fifo);
 
    // supprime les fichiers correspondant aux pipes nommées si elles exsitent déjà
    unlink(sender_fifo);
    unlink(receiver_fifo);
 
+   // au cas où il y a une erreur lors de la création d'une named pipe
    if (mkfifo(sender_fifo, 0666) == -1) {
       perror("mkfifo()");
       return 1;
@@ -121,16 +121,26 @@ int main(int argc, char* argv[]) {
    // création de processus
    pid_t process = fork();
    if (process > 0) { // process qui lit les msgs
-      int fd_write = open(sender_fifo, O_WRONLY); // ouverture du pipe nommé après le fork D'APRES chatgpt
-      if (fd_write == -1) {
+      int fd_write_sender = open(sender_fifo, O_WRONLY); // ouverture du pipe nommé après le fork D'APRES chatgpt
+      int fd_write_receiver = open(receiver_fifo, O_WRONLY);
+
+      if (fd_write_sender == -1) {
+         perror("échec d'ouverture du pipe : ");
+         unlink(sender_fifo);
+         unlink(receiver_fifo);
+         return 1;
+      }
+      else if (fd_write_receiver == -1) {
          perror("échec d'ouverture du pipe : ");
          unlink(sender_fifo);
          unlink(receiver_fifo);
          return 1;
       }
 
-      parent(fd_write);
-      close(fd_write);
+      parent(fd_write_sender);
+      parent(fd_write_receiver);
+      close(fd_write_sender);
+      close(fd_write_receiver);
 
       wait(NULL);// attente du processus fils D'APRES chatgpt unlink(sender_fifo);
       unlink(sender_fifo);
@@ -138,13 +148,26 @@ int main(int argc, char* argv[]) {
    }
 
    else if (process == 0) { // process qui affiche ce qui est lu sur le pipe
-      int fd_read = open(receiver_fifo, O_RDONLY); // same
-      if (fd_read == -1) {
+      int fd_read_sender = open(sender_fifo, O_RDONLY); // same
+      int fd_read_receiver = open(receiver_fifo, O_RDONLY);
+      if (fd_read_sender == -1) {
          perror("échec d'ouverture du pipe : ");
+         unlink(sender_fifo);
+         unlink(receiver_fifo);
+         return 1;
+      }
+      else if (fd_read_receiver == -1) {
+         perror("échec d'ouverture du pipe : ");
+         unlink(sender_fifo);
+         unlink(receiver_fifo);
          return 1;
       }
 
-      fils(fd_read, sender);
+      fils(fd_read_sender, sender);
+      fils(fd_read_receiver, receiver);
+
+      close(fd_read_sender);
+      close(fd_read_receiver);
 
 
       unlink(sender_fifo);
