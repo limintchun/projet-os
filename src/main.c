@@ -26,11 +26,32 @@
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
 
-int checkVadlidArgv(int argc, char* argv[], bool* bot_mode_activated, bool* manual_mode_activated);
+void parseUsernames(char* argv[], int argv_index, const char** user1, const char** user2, const char* special_name);
+int checkParseArgv(int argc, char* argv[], bool* bot_mode, bool* manual_mode, const char** user1, const char** user2);
 void myHandler(int received_signal);
 
 
-int checkVadlidArgv(int argc, char* argv[], bool* bot_mode_activated, bool* manual_mode_activated) {
+void parseUsernames(char* argv[], int argv_index, const char** user1, const char** user2, const char* special_name) {
+   if (special_name != NULL) {
+      if (argv_index == 1) {
+         *user1 = special_name;
+      }
+      else {
+         *user2 = special_name;
+      }
+   }
+   else {
+      if (argv_index == 1) {
+         *user1 = argv[argv_index];
+      }
+      else {
+         *user2 = argv[argv_index];
+      }
+   }
+}
+
+
+int checkParseArgv(int argc, char* argv[], bool* bot_mode, bool* manual_mode, const char** user1, const char** user2) {
    if (1 == argc)  {
       fprintf(stderr, "chat pseudo_utilisateur pseudo_destinataire [--bot] [--manuel]\n");
       return 1;
@@ -44,10 +65,10 @@ int checkVadlidArgv(int argc, char* argv[], bool* bot_mode_activated, bool* manu
          }
          // CHECK IF --PARAM IN ARGV[1] OR ARGV[2] SHOULD RISE AN ERROR OR BE CONSIDERED AS AN USERNAME
          else if (strcmp(argv[i], "--bot") == 0) {
-            continue;
+            parseUsernames(argv, i, user1, user2, "Bot");
          } 
          else if (strcmp(argv[i], "--manuel") == 0) {
-            continue;
+            parseUsernames(argv, i, user1, user2, "Manuel");
          }
          else {
             for (size_t j = 0; j < strlen(argv[i]); j++) {
@@ -59,22 +80,23 @@ int checkVadlidArgv(int argc, char* argv[], bool* bot_mode_activated, bool* manu
                   return 3;
                }
             }
+            parseUsernames(argv, i, user1, user2, NULL);
          }  
       }
       if (argc == 4) {
          if (strcmp(argv[3], BOT_MODE) == 0) {
-            *bot_mode_activated = true;
+            *bot_mode = true;
          }
          else if (strcmp(argv[3], MANUAL_MODE) == 0) {
-            *manual_mode_activated = true;
+            *manual_mode = true;
          }
       }
       else if (argc == 5) {
          if (strcmp(argv[3], BOT_MODE) == 0 || strcmp(argv[4], BOT_MODE) == 0) {
-            *bot_mode_activated = true;
+            *bot_mode = true;
          }
          if (strcmp(argv[3], MANUAL_MODE) == 0 || strcmp(argv[4], MANUAL_MODE) == 0) {
-            *manual_mode_activated = true;
+            *manual_mode = true;
          }
       }
    }
@@ -91,13 +113,15 @@ void myHandler(int received_signal) {
 
 
 int main(int argc, char* argv[]) {
-   bool bot_mode_activated = false;
-   bool manual_mode_activated = false;
-   int result_checking = checkVadlidArgv(argc, argv, &bot_mode_activated, &manual_mode_activated);
+   bool bot_mode = false;
+   bool manual_mode= false;
+   const char* user1;
+   const char* user2;
+   int result_checking = checkParseArgv(argc, argv, &bot_mode, &manual_mode, &user1, &user2);
    if (result_checking != 0) {
       return result_checking;
    }
-   if (manual_mode_activated) {
+   if (manual_mode) {
       signal(SIGINT, myHandler);
    }
    return 0;
