@@ -12,12 +12,12 @@
 
 
 #define MAX_LENGHT_USERNAME 30
-#define DEFAULT_BUFFER_SIZE 1000
+#define DEFAULT_BUFFER_SIZE 256
 #define BOT_MODE           "--bot"
 #define MANUAL_MODE        "--manuel"
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_YELLOW  "\x1b[33m"
-
+#define ANSI_COLOR_RESET   "\x1b[0m"
 
 
 void initializePipesNames(char* pipe_user1_user2, char* pipe_user2_user1, const char* user1, const char* user2);
@@ -30,14 +30,9 @@ void fils(int read_fd, char sender[]);
 
 
 void initializePipesNames(char* pipe_user1_user2, char* pipe_user2_user1, const char* user1, const char* user2) {
-   // Pourquoi utiliser snprintf et non sprintf ?
-   // Meilleure version de sprintf car on se limite avec une taille de buffer.
-   // Pas avoir de depassements (buffer overflows).
-   // Tronque la sortie (coupe les donnees) en cas de buffer overflows.
    snprintf(pipe_user1_user2, DEFAULT_BUFFER_SIZE, "/tmp/%s-%s.chat", user1, user2);
    snprintf(pipe_user2_user1, DEFAULT_BUFFER_SIZE, "/tmp/%s-%s.chat", user2, user1);
 }
-
 void myHandler(int received_signal) {
    if (received_signal == SIGINT) {
       printf("The user pressed CTRL+C.\n");
@@ -50,7 +45,7 @@ void affichage(char username[], char message[], bool modificationActivate) {
   if (modificationActivate == true) {
     printf("[%s] : %s", username, message);
   }else{
-     printf("[" ANSI_COLOR_YELLOW "%s" ANSI_COLOR_RESET "] %s\n", username, message);
+     printf("[" ANSI_COLOR_YELLOW"\x1B[4m%s\x1B[0m] %s\n" ANSI_COLOR_RESET, username, message);
   }
 }
 
@@ -70,7 +65,6 @@ void parseUsernames(char* argv[], int argv_index, const char** user1, const char
       }
    }
 }
-
 
 int checkParseArgv(int argc, char* argv[], bool* bot_mode, bool* manual_mode, const char** user1, const char** user2) {
    if (1 == argc){
@@ -131,22 +125,23 @@ void parent(int write_fd) {
   }//## eventuelle ;
 }
 
-
 void fils(int read_fd, char sender[]) {
   printf("je suis le fils \n");
 
   char buffer[256];
   while (read(read_fd, buffer, sizeof(buffer)) > 0) {
-    affichage(sender, buffer, false);
+    affichage(sender, buffer, true);
   }
 
 }
 
+
+
 int main(int argc, char* argv[]){
   bool bot_mode = false;
   bool manual_mode = false;
-  const char* user1;
-  const char* user2;
+  char* user1;
+  char* user2;
   int result_checking = checkParseArgv(argc, argv, &bot_mode, &manual_mode, &user1, &user2);
     if (result_checking != 0){
       return result_checking;
@@ -166,33 +161,36 @@ int main(int argc, char* argv[]){
   if(mkfifo(pipe_user1_user2, 0666) == -1 || mkfifo(pipe_user2_user1, 0666) == -1) {
     perror("mkfifo() error ; pipe hasn't been created.\n");
     return 1;
-  }
-  pid_t pid = fork();
+  } pid_t pid = fork();
   if(pid > 0){
     int fd_user1_user2_write = open(pipe_user1_user2, O_WRONLY);
     if (fd_user1_user2_write == -1) {
       perror("échec d'ouverture du pipe : ");
-      unlink(fd_user1_user2_write);
+      unlink(pipe_user1_user2);
       return 1;
     }
-  parent(fd_user1_user2);
-  close(fd_user1_user2);
+  parent(fd_user1_user2_write);
+  close(fd_user1_user2_write);
   wait(NULL);
   unlink(user1);
- }else if (process == 0) { // process qui affiche ce qui est lu sur le pipe
-     int fd_user1_user2_read = open(pipe_user2_user1, O_RDONLY); // same
+
+
+
+  }else if (pid == 0) { 
+     int fd_user1_user2_read = open(pipe_user2_user1, O_RDONLY);
 
      if (fd_user1_user2_read == -1) {
        perror("échec d'ouverture du pipe : ");
        unlink(pipe_user2_user1);
        return 1;
      }
-  fils(fd_user1_user2_read)
+  fils(fd_user1_user2_read,user2);
   close(fd_user1_user2_read);
   unlink(user2);
-  }else:
+  }else{
      perror("fork()");
      return 1;
-
+   }
   return 1;
 }
+
