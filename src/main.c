@@ -17,7 +17,7 @@
 #define MANUAL_MODE        "--manuel"
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_YELLOW  "\x1b[33m"
-
+#define ANSI_COLOR_RESET   "\x1b[0m"
 
 
 void initializePipesNames(char* pipe_user1_user2, char* pipe_user2_user1, const char* user1, const char* user2);
@@ -172,14 +172,14 @@ int main(int argc, char* argv[]){
     int fd_user1_user2_write = open(pipe_user1_user2, O_WRONLY);
     if (fd_user1_user2_write == -1) {
       perror("échec d'ouverture du pipe : ");
-      unlink(fd_user1_user2_write);
+      unlink(pipe_user1_user2); // c'est le pipe qui faut unlink, pas le fd
       return 1;
     }
   parent(fd_user1_user2);
   close(fd_user1_user2);
   wait(NULL);
-  unlink(user1);
- }else if (process == 0) { // process qui affiche ce qui est lu sur le pipe
+  unlink(pipe_user1_user2);
+ }else if (pid == 0) { // process qui affiche ce qui est lu sur le pipe
      int fd_user1_user2_read = open(pipe_user2_user1, O_RDONLY); // same
 
      if (fd_user1_user2_read == -1) {
@@ -189,10 +189,10 @@ int main(int argc, char* argv[]){
      }
   fils(fd_user1_user2_read)
   close(fd_user1_user2_read);
-  unlink(user2);
-  }else:
+  unlink(pipe_user2_user1);
+  }else {
      perror("fork()");
      return 1;
-
-  return 1;
+  }
+  return 0;
 }
