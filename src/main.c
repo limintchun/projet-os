@@ -253,7 +253,26 @@ int main(int argc, char* argv[]) {
       }     
 
       char sended_message[DEFAULT_BUFFER_SIZE];
-      printUsernames(user1, bot_mode, true);
+      if (bot_mode) {
+         printUsernames(user1, bot_mode, true);
+      }
+      else if (manual_mode) {
+         const int protection = PROT_READ | PROT_WRITE;
+         const int visibility = MAP_SHARED | MAP_ANONYMOUS;
+
+         int *ptr = mmap(NULL, DEFAULT_BUFFER_SIZE, protection, visibility);
+         if (ptr == MAP_FAILED) {
+            perror("Mapping failed");
+            return 1;
+         }
+
+         // faire qqc avec la mémoire partagé
+
+         int *err = munmap(ptr, DEFAULT_BUFFER_SIZE);
+         if (err != 0) {
+            perror("unmapping failed");
+            return 1;
+         }
       while (fgets(sended_message, DEFAULT_BUFFER_SIZE, stdin) != NULL) {
          size_t len_message = strlen(sended_message);
          if (len_message > 0 && sended_message[len_message-1] == '\n') {
