@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <errno.h>
 #include <ctype.h>
 #include <stdbool.h>
@@ -47,6 +48,7 @@ void printUsernames(bool oneself, ChatConfiguration* chat_configuration);
 void pipesCleaning(ChatConfiguration* chat_configuration);
 void sigpipeHandler(int received_signal);
 void sigintMainProcessHandler(int received_signal);
+void sigtermSecondProcessHandler(int received_signal);
 void sigintSecondProcessHandler();
 void mainProcessHandling(ChatConfiguration* chat_configuration);
 void secondProcessHandling(ChatConfiguration* chat_configuration);
@@ -55,6 +57,8 @@ int main(int argc, char* argv[]);
 
 // Variable globale pour acceder a la structure dans le gestionnaire de signal.
 ChatConfiguration* global_chat_configuration = NULL;
+// Variable globale pour identifier le PID dans le gestionnaire de signal afin de terminer l'enfant.
+pid_t global_second_process_pid;
 
 
 void initializeChatConfiguration(ChatConfiguration* chat_configuration) {
@@ -207,14 +211,27 @@ void sigpipeHandler(int received_signal) {
 
 void sigintMainProcessHandler(int received_signal) {
    if (received_signal == SIGINT) {
-      fprintf(stderr, "You pressed CTRL+C.\n");
+      fprintf(stderr, "\nYou pressed CTRL+C.\n");
       pipesCleaning(global_chat_configuration);
 
       int exit_code = (!global_chat_configuration->reading_pipe_open && 
       !global_chat_configuration->writing_pipe_open) ? 4 : 0;
       
-      kill(0, SIGTERM); 
+      if (global_second_process_pid > 0) {
+         kill(global_second_process_pid, SIGTERM);
+         // Attendre la terminaison du second processus pour ne pas avoir des processus zombies.
+         // Le second processus ne doit pas continuer apres la terminaison (-> processus zombies).
+         waitpid(global_second_process_pid, NULL, 0); 
+      }
       exit(exit_code);
+   }
+}
+
+
+void sigtermSecondProcessHandler(int received_signal) {
+   if (received_signal == SIGTERM) {
+      pipesCleaning(global_chat_configuration);
+      exit(0);
    }
 }
 
@@ -225,6 +242,8 @@ void sigintSecondProcessHandler() {
    // SIG_IGN indique au progranne d'ignorer le signal SIGINT (CTRL+C qui termine immediatement un programme par defaut).
    // SIGINT n'est donc pas transmis au processus.
    signal(SIGINT, SIG_IGN);
+   // Le second processus doit gerer le signal SIGTERM envoye par le main processus.
+   signal(SIGTERM, sigtermSecondProcessHandler);
 }
 
 
@@ -307,13 +326,13 @@ int main(int argc, char* argv[]) {
 
    signal(SIGPIPE, sigpipeHandler);
 
-   pid_t pid = fork();
-   if (pid < 0) {
+   global_second_process_pid = fork();
+   if (global_second_process_pid < 0) {
       perror("fork() error ; an error during fork process occurred.\n");
       pipesCleaning(&chat_configuration);
       return 1;
    }
-   else if (pid == 0) {
+   else if (global_second_process_pid == 0) {
       // Second processus : lire sur le pipe nomme adequat les messages et les afficher.
       // Toujours ignorer les interruptions CTRL+C dans le second processus.
       sigintSecondProcessHandler();
@@ -323,6 +342,5 @@ int main(int argc, char* argv[]) {
       // Processus d'origine : lire les messages et les transmettre sur le pipe nomme adequat.
       mainProcessHandling(&chat_configuration);
    }
-   pipesCleaning(&chat_configuration);
    return 0;
 }
