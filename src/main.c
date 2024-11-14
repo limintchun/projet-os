@@ -12,6 +12,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <errno.h>
 #include <ctype.h>
 #include <stdbool.h>
@@ -23,6 +25,7 @@
 
 #define MAX_LENGHT_USERNAME 30
 #define DEFAULT_BUFFER_SIZE 1000
+#define SHARED_MEMORY_SIZE  4096
 #define BOT_MODE           "--bot"
 #define MANUAL_MODE        "--manuel"
 
@@ -43,6 +46,8 @@ typedef struct {
 void initializeChatConfiguration(ChatConfiguration* chat_configuration);
 void parseUsernames(char* argv[], int argv_index, const char* special_name, ChatConfiguration* chat_configuration);
 void checkParseArgv(int argc, char* argv[], ChatConfiguration* chat_configuration);
+void sharedMemoryCleaning();
+void initializeSharedMemory();
 void initializeCreatePipes(ChatConfiguration* chat_configuration);
 void printUsernames(bool oneself, ChatConfiguration* chat_configuration);
 void pipesCleaning(ChatConfiguration* chat_configuration);
@@ -50,6 +55,7 @@ void sigpipeHandler(int received_signal);
 void sigintMainProcessHandler(int received_signal);
 void sigtermSecondProcessHandler(int received_signal);
 void sigintSecondProcessHandler();
+void displayPendingMessages(ChatConfiguration* chat_configuration);
 void mainProcessHandling(ChatConfiguration* chat_configuration);
 void secondProcessHandling(ChatConfiguration* chat_configuration);
 int main(int argc, char* argv[]);
@@ -59,6 +65,9 @@ int main(int argc, char* argv[]);
 ChatConfiguration* global_chat_configuration = NULL;
 // Variable globale pour identifier le PID dans le gestionnaire de signal afin de terminer l'enfant.
 pid_t global_second_process_pid;
+// Variable globale pour identifier la memoire partagee.
+int global_shared_memory_id;
+char* global_shared_memory = NULL;
 
 
 void initializeChatConfiguration(ChatConfiguration* chat_configuration) {
@@ -69,7 +78,7 @@ void initializeChatConfiguration(ChatConfiguration* chat_configuration) {
    chat_configuration->bot_mode = false;
    chat_configuration->reading_pipe_open = false;
    chat_configuration->writing_pipe_open = false;
-   chat_configuration->pipes_created = true;
+   chat_configuration->pipes_created = false;
 }
 
 
@@ -145,6 +154,29 @@ void checkParseArgv(int argc, char* argv[], ChatConfiguration* chat_configuratio
 }
 
 
+void sharedMemoryCleaning() {
+   if (global_shared_memory != NULL) {
+      shmdt(global_shared_memory);
+      shmctl(global_shared_memory_id, IPC_RMID, NULL);
+   }
+}
+
+
+void initializeSharedMemory() {
+   global_shared_memory_id = shmget(IPC_PRIVATE, SHARED_MEMORY_SIZE, IPC_CREAT | 0666);
+   if (global_shared_memory_id == -1) {
+      perror("Error during the attempt to create shared memory.\n");
+      exit(1);
+   }
+   global_shared_memory = (char *)shmat(global_shared_memory_id, NULL, 0);
+   if (global_shared_memory == (char *)-1) {
+      perror("Error during the attempt to link shared memory.\n");
+      exit(1);
+   }
+   memset(global_shared_memory, 0, SHARED_MEMORY_SIZE);
+}
+
+
 void initializeCreatePipes(ChatConfiguration* chat_configuration) {
    // Pourquoi utiliser snprintf et non sprintf ?
    // Meilleure version de sprintf car on se limite avec une taille de buffer.
@@ -165,15 +197,16 @@ void initializeCreatePipes(ChatConfiguration* chat_configuration) {
       unlink(chat_configuration->pipe_user2_user1);
       exit(1);
    }
+   chat_configuration->pipes_created = true;
 }
 
 
 void printUsernames(bool oneself, ChatConfiguration* chat_configuration) {
    if (chat_configuration->bot_mode && oneself) {
-      printf("%s", chat_configuration->user1);
+      printf("%s (vous) : ", chat_configuration->user1);
    }
    else if (chat_configuration->bot_mode && !oneself) {
-      printf("%s", chat_configuration->user2);
+      printf("%s : ", chat_configuration->user2);
    }
    else {
       // Affiche en rouge et souligne.
@@ -212,8 +245,9 @@ void sigpipeHandler(int received_signal) {
 void sigintMainProcessHandler(int received_signal) {
    if (received_signal == SIGINT) {
       fprintf(stderr, "\nYou pressed CTRL+C.\n");
-      pipesCleaning(global_chat_configuration);
-
+      if (global_chat_configuration->manual_mode) {
+         displayPendingMessages(global_chat_configuration);
+      }
       int exit_code = (!global_chat_configuration->reading_pipe_open && 
       !global_chat_configuration->writing_pipe_open) ? 4 : 0;
       
@@ -223,6 +257,8 @@ void sigintMainProcessHandler(int received_signal) {
          // Le second processus ne doit pas continuer apres la terminaison (-> processus zombies).
          waitpid(global_second_process_pid, NULL, 0); 
       }
+      pipesCleaning(global_chat_configuration);
+      sharedMemoryCleaning();
       exit(exit_code);
    }
 }
@@ -247,17 +283,59 @@ void sigintSecondProcessHandler() {
 }
 
 
+void displayPendingMessages(ChatConfiguration* chat_configuration) {
+   // if (strlen(global_shared_memory) > 0) {
+   //    printf("\r\033[K");
+   //    printUsernames(false, chat_configuration);
+   //    printf("%s\n", global_shared_memory);
+   //    fflush(stdout);
+   //    memset(global_shared_memory, 0, SHARED_MEMORY_SIZE); 
+   // }
+   if (strlen(global_shared_memory) > 0) {
+      char messages_copy[SHARED_MEMORY_SIZE];
+      strncpy(messages_copy, global_shared_memory, SHARED_MEMORY_SIZE - 1);
+      messages_copy[SHARED_MEMORY_SIZE - 1] = '\0'; 
+
+      char *message = strtok(messages_copy, "\n");
+      while (message != NULL) {
+         printf("\r\033[K");
+         printUsernames(false, chat_configuration);
+         printf("%s\n", message);
+         fflush(stdout);
+         message = strtok(NULL, "\n");
+        }
+      memset(global_shared_memory, 0, SHARED_MEMORY_SIZE);
+    }
+}
+
+
 void mainProcessHandling(ChatConfiguration* chat_configuration) {
-   int fd_user1_user2_write = open(chat_configuration->pipe_user1_user2, O_WRONLY);
-   if (fd_user1_user2_write == -1) {
-      perror("An error occurred during the attempt to open the writing pipe.\n");
-      pipesCleaning(chat_configuration);
-      exit(1);
+   // int fd_user1_user2_write = open(chat_configuration->pipe_user1_user2, O_WRONLY);
+   // if (fd_user1_user2_write == -1) {
+   //    perror("An error occurred during the attempt to open the writing pipe.\n");
+   //    pipesCleaning(chat_configuration);
+   //    exit(1);
+   // }
+   int fd_user1_user2_write;
+   while ((fd_user1_user2_write = open(chat_configuration->pipe_user1_user2, O_WRONLY | O_NONBLOCK)) == -1) {
+      // O_NONBLOCK evite que open bloque directement le programme.
+      static const char* dots[] = {".", "..", "..."};
+      static int dot_index = 0;
+      printf("\rWaiting for %s connecting%s    ", chat_configuration->user2, dots[dot_index]);
+      fflush(stdout);
+      dot_index = (dot_index + 1) % 3;
+      usleep(500000); 
    }
+
+   printf("\r%*s\r", (int)(strlen("Waiting for %s connecting...") + strlen(chat_configuration->user2) + 4), "");
+   fflush(stdout);
+
    chat_configuration->writing_pipe_open = true; 
 
    char sended_message[DEFAULT_BUFFER_SIZE];
-   printUsernames(true, chat_configuration);
+   if (!chat_configuration->bot_mode) {
+      printUsernames(true, chat_configuration);
+   }
    while (fgets(sended_message, DEFAULT_BUFFER_SIZE, stdin) != NULL) {
       size_t len_message = strlen(sended_message);
       if (len_message > 0 && sended_message[len_message-1] == '\n') {
@@ -269,8 +347,13 @@ void mainProcessHandling(ChatConfiguration* chat_configuration) {
          pipesCleaning(chat_configuration);
          exit(1);
       }
-      printUsernames(true, chat_configuration);
-      fflush(stdout);
+      if (chat_configuration->manual_mode) {
+         displayPendingMessages(chat_configuration);
+      }
+      if (!chat_configuration->bot_mode) {
+         printUsernames(true, chat_configuration);
+         fflush(stdout);
+      }
    }
    close(fd_user1_user2_write);
    chat_configuration->writing_pipe_open = false;   
@@ -300,12 +383,22 @@ void secondProcessHandling(ChatConfiguration* chat_configuration) {
          // '\0' sert a eviter de lire dans la memoire au-dela de la taille du tableau.
          // printf peut donc savoir ou la chaine de caracteres se termine.
          received_message[readed_char] = '\0';
-         // "\r\033[K" fait un retour a la ligne + supprime tout son contenu.
-         printf("\r\033[K"); 
-         printUsernames(false, chat_configuration);
-         printf("%s\n", received_message);
-         printUsernames(true, chat_configuration);
-         fflush(stdout);
+         if (chat_configuration->manual_mode) {
+            strncat(global_shared_memory, received_message, SHARED_MEMORY_SIZE - strlen(global_shared_memory) - 1);
+            strncat(global_shared_memory, "\n", SHARED_MEMORY_SIZE - strlen(global_shared_memory) - 1);
+            printf("\a");
+            fflush(stdout);
+         }
+         else {
+            // "\r\033[K" fait un retour a la ligne + supprime tout son contenu.
+            printf("\r\033[K"); 
+            printUsernames(false, chat_configuration);
+            printf("%s\n", received_message);
+            if (!chat_configuration->bot_mode) {
+               printUsernames(true, chat_configuration);
+            }
+            fflush(stdout);
+         }
       }
 
    }
@@ -319,6 +412,10 @@ int main(int argc, char* argv[]) {
    initializeChatConfiguration(&chat_configuration);
 
    checkParseArgv(argc, argv, &chat_configuration);
+
+   if (chat_configuration.manual_mode) {
+      initializeSharedMemory();
+   }
 
    signal(SIGINT, sigintMainProcessHandler);
 
