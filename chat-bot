@@ -1,0 +1,83 @@
+#!/bin/bash
+
+# aide pour les commandes bash et scripts: https://devhints.io/bash
+# aide spécifique pour sed: https://www.hostinger.fr/tutoriels/sed-linux
+# aide pour dictionnaire "associative array": https://fr.cyberaxe.org/artic># aide lecture fichier et vérif: https://fr.linux-console.net/?p=22916
+
+function chat-bot() {
+  if [[ $# -gt 2 ]]; then
+    echo "chat-bot destinataire [pseudo]" >&2
+    exit 1
+  fi
+
+  username="$1"
+  botname="${2:-"bot"}"   # Valeur par défaut pour le bot si non spécifiée
+  programme="./chat $2 $1 --bot"
+
+  # Création d'un dictionnaire (associative array)
+  declare -A commands
+
+  # Définition des fonctions associées aux commandes
+
+  function qui_suis_je() {
+    echo "Vous êtes $username" >&"${CHAT_PIPES[1]}"
+  }
+
+  function li_fichier() {
+    # Le fichier est récupéré après le nettoyage de la commande
+    fichier=$(echo "$cleaned_command" | sed 's/^li\s\+//')  # Extraction du>    if [ -e "$fichier" ]; then
+      while IFS= read -r line; do
+        echo "$line"
+      done < "$fichier">&"${CHAT_PIPES[1]}"
+    else
+      echo "Le fichier $fichier n'existe pas.">&"${CHAT_PIPES[1]}"
+    fi
+  }
+ function au_revoir() {
+    echo "Chat terminé">&"${CHAT_PIPES[1]}"
+    exit 0
+  }
+
+  function liste() {
+    for file in $(ls -1); do
+      echo "$file">&"${CHAT_PIPES[1]}"
+    done
+  }
+
+  # Enregistrement des commandes dans le dictionnaire
+  commands[liste]="liste"
+  commands[qui_suis-je]="qui_suis_je"
+  commands[au_revoir]="au_revoir"
+  commands[li_FICHIER]="li_fichier"
+
+  # Fonction pour créer une coproc (coprocessus) et exécuter le programme
+  function create_coproc() {
+    local programme="$1"
+    coproc CHAT_PIPES { eval "$programme"; }
+    # Vérifier si la coproc a bien démarré
+    if [[ $? -ne 0 ]]; then
+      echo "Erreur dans l'exécution de la commande coproc" >&2
+      exit 1
+    fi
+  }
+  # Créer la coproc pour l'exécution du programme
+  create_coproc "$programme"
+
+  # Lecture et traitement des commandes envoyées via la coproc
+  while read -r line <&"${CHAT_PIPES[0]}"; do
+    user_command="$line"
+    # Utilisation de sed pour nettoyer la commande
+    cleaned_command=$(echo "$line" | sed 's/^[^:]*: //')
+
+    # Vérification si la commande est présente dans le dictionnaire
+    if [[ -n "${commands[$cleaned_command]}" ]]; then
+      # Exécution de la commande associée
+      ${commands[$cleaned_command]}
+    else
+      echo "Commande inconnue : $cleaned_command">&"${CHAT_PIPES[1]}"
+    fi
+  done
+}
+
+# Exécution du script avec les arguments fournis
+chat-bot "$@"
