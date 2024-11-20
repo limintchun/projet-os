@@ -117,7 +117,7 @@ function chat-bot() {
     if [[ "$command" == "li" ]]; then
       ${commands[$command]} "$file" "read"
 
-    si "li" n'est pas la commande détéctée il recherche dans les clés du dict pour lancer la fonction associée
+    #si "li" n'est pas la commande détéctée il recherche dans les clés du dict pour lancer la fonction associée
     elif [[ -n "${commands[$cleaned_command]}" ]]; then
       # Exécution de la commande associée
       ${commands[$cleaned_command]}
