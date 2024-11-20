@@ -62,11 +62,9 @@ function chat-bot() {
         done < "$file"
       else
 
-         : ' 
-          commande de base corrigée par l' IA pour pouvoir ajouter tout les mots suivant a res: 
-          syntaxe:  awk -v (vérifier) si purpose(mon mot recherché) est dans les "colones" du fichier
-          awk subdivise les fichiers en colones où " " n'est pas compris comme caractère
-          '
+         #commande de base corrigée par l' IA pour pouvoir ajouter tout les mots suivant a res: 
+         #syntaxe:  awk -v (vérifier) si purpose(mon mot recherché) est dans les "colones" du fichier
+         #awk subdivise les fichiers en colones où " " n'est pas compris comme caractère          
 
          res=$(awk -v purpose="$purpose" '$1 == purpose {for(i=2; i<=NF; i++) printf "%s ", $i; print ""}' "$file")
 
@@ -113,7 +111,7 @@ function chat-bot() {
     command=$(echo "$cleaned_command" | awk '{print $1}')
     file=$(echo "$cleaned_command" | awk '{print $2}')
 
-    vérifie si la commande est li FICHIER
+    #vérifie si la commande est li FICHIER
     if [[ "$command" == "li" ]]; then
       ${commands[$command]} "$file" "read"
 
