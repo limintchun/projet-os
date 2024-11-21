@@ -1,4 +1,9 @@
-#!/bin/bash                                                                                                                                                                                                                                                                                     # aide pour les commandes bash et scripts: https://devhints.io/bash                                                                             # aide pour dictionnaire "associative array": https://fr.cyberaxe.org/articles/bash-associative-array                                           # aide lecture fichier et vérif: https://fr.linux-console.net/?p=22916                                                                          # documentation pour sed et les expressions régulières: https://www.shellunix.com/regexp.html#:~:text=Les%20expresions%20r%C3%A9guli%C3%A8res%2># documentation pour awk: https://fr.linux-console.net/?p=20194
+#!/bin/bash
+
+# aide pour les commandes bash et scripts: https://devhints.io/bash
+# aide pour dictionnaire "associative array": https://fr.cyberaxe.org/articles/bash-associative-array
+# aide lecture fichier et vérif: https://fr.linux-console.net/?p=22916
+# documentation pour sed et les expressions régulières: https://www.shellunix.com/regexp.html#:~:text=Les%20expresions%20r%C3%A9guli%C3%A8res%2># documentation pour awk: https://fr.linux-console.net/?p=20194
 
 function chat-bot() {
   if [[ $# -gt 2 ]]; then
@@ -40,6 +45,8 @@ function chat-bot() {
 
   function au_revoir() {
     echo "Chat terminé">&"$stdin"
+    exec {CHAT_PIPES[0]}>&- 
+    exec {CHAT_PIPES[1]}>&-
     exit 0
   }
 
@@ -62,7 +69,7 @@ function chat-bot() {
       fi
 
     else
-      echo "Le fichier $file n'existe pas." >&"$stdin"
+      echo "Le fichier $file n'a pas pu être ouvert." >&"$stdin"
     fi
 
   }
@@ -80,6 +87,8 @@ function chat-bot() {
     # Vérifier si la coproc a bien démarré
     if [[ $? -ne 0 ]]; then
       echo "Erreur dans l'exécution de la commande coproc" >&2
+      exec {CHAT_PIPES[0]}>&- 
+      exec {CHAT_PIPES[1]}>&-
       exit 1
     fi
   }
@@ -121,8 +130,7 @@ function chat-bot() {
   unset command
   unset file
   # fermer les descripteurs de fichiers
-  exec {CHAT_PIPES[0]}>&- 
-  exec {CHAT_PIPES[1]}>&-
+  
 }
 # lance le programme avec les arguments fournis 
 chat-bot "$@"
