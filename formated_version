@@ -42,9 +42,19 @@ function chat-bot() {
   }
 
 
-
   function au_revoir() {
     echo "Chat terminé">&"$stdin"
+    # libère la mémoire
+    unset username
+    unset botname
+    unset programme
+    unset stdout
+    unset stdin
+    unset user_command
+    unset cleaned_command
+    unset command
+    unset file
+    # fermer les descripteurs de fichiers
     exec {CHAT_PIPES[0]}>&- 
     exec {CHAT_PIPES[1]}>&-
     exit 0
@@ -118,19 +128,8 @@ function chat-bot() {
       find_word "liste-bot.txt" "$cleaned_command"
     fi
 
-  done
-  # libère la mémoire
-  unset username
-  unset botname
-  unset programme
-  unset stdout
-  unset stdin
-  unset user_command
-  unset cleaned_command
-  unset command
-  unset file
-  # fermer les descripteurs de fichiers
-  
+  done  
 }
+
 # lance le programme avec les arguments fournis 
 chat-bot "$@"
