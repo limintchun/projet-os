@@ -10,7 +10,7 @@ function chat-bot() {
   botname="${2:-"bot"}"   # Valeur par défaut pour le bot si non spécifiée
 
   # il faut bien vérifier que le nom du programme compilé est chat
-  programme="./src/chat $2 $1 --bot"
+  programme="./src/main $2 $1 --bot"
   # lancer le programme parallèle a Alice bot dans ce script
   # Création d'un dictionnaire (associative array)
   declare -A commands
@@ -120,6 +120,9 @@ function chat-bot() {
   unset cleaned_command
   unset command
   unset file
+  # fermer les descripteurs de fichiers
+  exec {CHAT_PIPES[0]}>&- 
+  exec {CHAT_PIPES[1]}>&-
 }
 # lance le programme avec les arguments fournis 
 chat-bot "$@"
