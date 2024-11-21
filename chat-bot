@@ -1,25 +1,76 @@
-#!/bin/bash
-
-# aide pour les commandes bash et scripts: https://devhints.io/bash
-# aide pour dictionnaire "associative array": https://fr.cyberaxe.org/articles/bash-associa>
-# aide lecture fichier et vérif: https://fr.linux-console.net/?p=22916
-# documentation pour sed et les expressions régulières: https://www.shellunix.com/regexp.ht>
-# documentation pour awk: https://fr.linux-console.net/?p=20194
-
+#!/bin/bash                                                                                                                                                                                                                                                                                     # aide pour les commandes bash et scripts: https://devhints.io/bash                                                                             # aide pour dictionnaire "associative array": https://fr.cyberaxe.org/articles/bash-associative-array                                           # aide lecture fichier et vérif: https://fr.linux-console.net/?p=22916                                                                          # documentation pour sed et les expressions régulières: https://www.shellunix.com/regexp.html#:~:text=Les%20expresions%20r%C3%A9guli%C3%A8res%2># documentation pour awk: https://fr.linux-console.net/?p=20194
 
 function chat-bot() {
-  # vérification du nombre de paramètres passés en commandes
   if [[ $# -gt 2 ]]; then
     echo "chat-bot destinataire [pseudo]" >&2
     exit 1
   fi
 
-  # récupération des paramètres
   username="$1"
   botname="${2:-"bot"}"   # Valeur par défaut pour le bot si non spécifiée
-  programme="./chat $2 $1 --bot" 
-
+  programme="./chat $2 $1 --bot"
   # lancer le programme parallèle a Alice bot dans ce script
+  # Création d'un dictionnaire (associative array)
+  declare -A commands
+
+  # Définition des fonctions associées aux commandes
+
+  function qui_suis_je() {
+    echo "Vous êtes $username" >&"$stdin"
+  }
+
+  function li_fichier() {
+    # Le fichier est récupéré après le nettoyage de la commande
+    local file="$1"
+    # local sert à la gestion de la mémoire car à la fin de la fonction la variable est supprimée
+
+    if [[ -e "$file" && -r "$file" ]]; then
+      while IFS= read -r line; do
+        echo "$line" >&"$stdin"
+      done < "$file"
+
+    else
+      echo "Le fichier $file n'existe pas." >&"$stdin"
+    fi
+  }
+
+
+
+  function au_revoir() {
+    echo "Chat terminé">&"$stdin"
+    exit 0
+  }
+
+  function liste() {
+    for file in $(ls -1| sort); do
+      echo "$file " >&"$stdin"
+    done
+  }
+
+  function find_word(){
+    local file="$1"
+    local word="$2"
+    if [[ -e "$file" && -r "$file" ]]; then
+      # commande de base corrigée par l' IA pour pouvoir comprendre tout les mots suivant le préfixé purpose
+      local res=$(awk -v word="$word" '$1 == word {for(i=2; i<=NF; i++) printf "%s ", $i; print ""}' "$file")
+      if [[ -z $res ]]; then
+        echo -e "\xF0\x9F\xA4\x96 ?">&"$stdin"
+      else
+        echo "$res" >&"$stdin"
+      fi
+
+    else
+      echo "Le fichier $file n'existe pas." >&"$stdin"
+    fi
+
+  }
+
+  # Enregistrement des commandes dans le dictionnaire
+  commands[liste]="liste"
+  commands[qui suis-je]="qui_suis_je"
+  commands[au revoir]="au_revoir"
+  commands[li]="li_fichier"
+
   # Fonction pour créer une coproc (coprocessus) et exécuter le programme
   function create_coproc() {
     local programme="$1"
@@ -31,99 +82,42 @@ function chat-bot() {
     fi
   }
 
-
+  # Créer la coproc pour l'exécution du programme
   create_coproc "$programme"
   stdout=${CHAT_PIPES[0]}
   stdin=${CHAT_PIPES[1]}
 
-
-  # Création d'un dictionnaire (associative array) pour stocker les fonctions du chat-bot
-  declare -A commands
-
-  # Définition des fonctions associées aux commandes
-
-  function qui_suis_je() {
-    echo "Vous êtes $username" >&"${CHAT_PIPES[1]}"
-  }
-
-
-  function li_fichier() {
-    # Le fichier est récupéré après le nettoyage de la commande
-    file="$1"
-    # purpose == read -->lancer une lecture classique de fichier
-    # purpose == mot  --> rechercher dans liste-bot.txt
-    purpose="$2"
-    found=0
-
-    if [[ -e "$file" && -r "$file" ]]; then
-      if [[ "$purpose" == "read" ]]; then
-        while IFS= read -r line; do
-          echo "$line" >&"${CHAT_PIPES[1]}"
-        done < "$file"
-      else
-
-         #commande de base corrigée par l' IA pour pouvoir ajouter tout les mots suivant a res: 
-         #syntaxe:  awk -v (vérifier) si purpose(mon mot recherché) est dans les "colones" du fichier
-         #awk subdivise les fichiers en colones où " " n'est pas compris comme caractère          
-
-         res=$(awk -v purpose="$purpose" '$1 == purpose {for(i=2; i<=NF; i++) printf "%s ", $i; print ""}' "$file")
-
-         # si res est vide renvoie le code utf-8 du robot (trouvé par IA)
-         if [[ -z $res ]]; then
-           echo -e "\xF0\x9F\xA4\x96 ?">&"${CHAT_PIPES[1]}"
-         else
-           echo "$res" >&"${CHAT_PIPES[1]}"
-         fi
-      fi
-    else
-      echo "Le fichier $file n'existe pas." >&"${CHAT_PIPES[1]}"
-    fi
-  }
-
-
-  function au_revoir() {
-    echo "Chat terminé">&"${CHAT_PIPES[1]}"
-    exit 0
-  }
-
-
-  function liste() {
-    for file in *; do
-      echo "$file ">&"${CHAT_PIPES[1]}"
-    done
-  }
-
-
-  # Enregistrement des commandes dans le dictionnaire
-  commands[liste]="liste"
-  commands[qui suis-je]="qui_suis_je"
-  commands[au revoir]="au_revoir"
-  commands[li]="li_fichier"
-
-
-  # Boucle de lecture principale pour lire les commandes tapées par l'utilisateur
-  while read -r line <&"${CHAT_PIPES[0]}"; do
+   while read -r line <&"$stdout"; do
     user_command="$line"
-    # Affichage == "Username: MESSAGE' --> cleaned_command enlève "Username:" pour ne conserver que MESSAGE
     cleaned_command=$(echo "$line" | sed 's/^[^:]*: //')
 
-    # awk sépare la chaine de caractères en substrings efficacement étant donné que " " n 'est pas considéré caractère. Il s'en sert alors pour diviser la chaine 
+    # update1; seule solution trouvée pour identifier si la commande est "li" est de séparer les parties de l'input
+
     command=$(echo "$cleaned_command" | awk '{print $1}')
     file=$(echo "$cleaned_command" | awk '{print $2}')
 
-    #vérifie si la commande est li FICHIER
     if [[ "$command" == "li" ]]; then
-      ${commands[$command]} "$file" "read"
+      ${commands[$command]} "$file"
 
-    #si "li" n'est pas la commande détéctée il recherche dans les clés du dict pour lancer la fonction associée
     elif [[ -n "${commands[$cleaned_command]}" ]]; then
       # Exécution de la commande associée
       ${commands[$cleaned_command]}
 
     else
-      
-      li_fichier "liste-bot.txt" "$cleaned_command"
+      find_word "liste-bot.txt" "$cleaned_command"
     fi
+
   done
+  # libère la mémoire
+  unset username
+  unset botname
+  unset programme
+  unset stdout
+  unset stdin
+  unset user_command
+  unset cleaned_command
+  unset command
+  unset file
 }
+# lance le programme avec les arguments fournis 
 chat-bot "$@"
