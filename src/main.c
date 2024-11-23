@@ -368,7 +368,9 @@ void cleanStreamsBuffers(ChatData* chat_data) {
 
 void sigintMonitor(ChatData* chat_data) {
     if (sigint_catched) {
-        printf("\nYou pressed CTRL+C.\n");
+        if (chat_data->prestige_mode) {
+            printf("\nYou pressed CTRL+C.\n");
+        }
         if (chat_data->manual_mode && chat_data->pipes_opened) {
             displayPendingMessages(chat_data);
         }
@@ -563,7 +565,9 @@ void mainProcessHandler(ChatData* chat_data) {
             }
             else if (feof(stdin)) {
                 // C'est un EOF donc l'utilisateur a utilise CTRL+D indiquant qu'il ne va plus ecrire sur stdin
-                printf("You pressed CTRL+D.\n");
+                if (chat_data->prestige_mode) {
+                    printf("You pressed CTRL+D.\n");
+                }
                 terminateProgram(false, chat_data);
             }
         }
