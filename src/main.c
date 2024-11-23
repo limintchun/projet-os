@@ -267,7 +267,7 @@ void displayUsernames(bool oneself, ChatData* chat_data) {
     else if (chat_data->bot_mode && !oneself) {
         printf("[%s] ", chat_data->user2);
     }
-    else if (!chat_data->bot_mode && !oneself) {
+    else if (!chat_data->bot_mode && oneself) {
         printf("[\x1b[31m\x1B[4m%s\x1B[0m\x1b[0m] ", chat_data->user1);
     }
     else {
