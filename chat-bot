@@ -6,7 +6,7 @@
 # documentation pour sed et les expressions régulières: https://www.shellunix.com/regexp.html#:~:text=Les%20expresions%20r%C3%A9guli%C3%A8res%2># documentation pour awk: https://fr.linux-console.net/?p=20194
 
 function chat-bot() {
-  if [[ $# -gt 2 ]]; then
+  if [[ $# -ne 2 ]]; then
     echo "chat-bot destinataire [pseudo]" >&2
     exit 1
   fi
