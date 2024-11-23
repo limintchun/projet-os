@@ -6,16 +6,16 @@
 # documentation pour sed et les expressions régulières: https://www.shellunix.com/regexp.html#:~:text=Les%20expresions%20r%C3%A9guli%C3%A8res%2># documentation pour awk: https://fr.linux-console.net/?p=20194
 
 function chat-bot() {
-  if [[ $# -gt 2 ]]; then
+  if [[ $# -ne 2 ]]; then
     echo "chat-bot destinataire [pseudo]" >&2
     exit 1
   fi
 
-  username="$1"
-  botname="${2:-"bot"}"   # Valeur par défaut pour le bot si non spécifiée
+  local username="$1"
+  local botname="${2:-"bot"}"   # Valeur par défaut pour le bot si non spécifiée
 
   # il faut bien vérifier que le nom du programme compilé est chat
-  programme="./chat $2 $1 --bot"
+  local programme="./chat $2 $1 --bot"
   # lancer le programme parallèle a Alice bot dans ce script
   # Création d'un dictionnaire (associative array)
   declare -A commands
@@ -42,21 +42,28 @@ function chat-bot() {
   }
 
 
-
   function au_revoir() {
     echo "Chat terminé">&"$stdin"
+    # libère la mémoire des variables non locales
+    unset stdout
+    unset stdin
+    unset file
+    # fermer les descripteurs de fichiers
     exec {CHAT_PIPES[0]}>&- 
     exec {CHAT_PIPES[1]}>&-
     exit 0
   }
 
   function liste() {
-    for file in $(ls -1| sort); do
+    local files
+    files=$(ls -1 | sort)
+    while IFS= read -r file; do
       echo "$file " >&"$stdin"
-    done
-  }
+    done <<< "$files"
+}
 
   function find_word(){
+    # le mot-clé local indique que la variable sera libérée à la fin de la fonction
     local file="$1"
     local word="$2"
     if [[ -e "$file" && -r "$file" ]]; then
@@ -99,12 +106,12 @@ function chat-bot() {
   stdin=${CHAT_PIPES[1]}
 
    while read -r line <&"$stdout"; do
-    user_command="$line"
-    cleaned_command=$(echo "$line" | sed 's/^[^:]*: //')
+
+    local cleaned_command=$(echo "$line" | sed 's/^[^:]*: //')
 
     # update1; seule solution trouvée pour identifier si la commande est "li" est de séparer les parties de l'input
 
-    command=$(echo "$cleaned_command" | awk '{print $1}')
+    local command=$(echo "$cleaned_command" | awk '{print $1}')
     file=$(echo "$cleaned_command" | awk '{print $2}')
 
     if [[ "$command" == "li" ]]; then
@@ -117,20 +124,9 @@ function chat-bot() {
     else
       find_word "liste-bot.txt" "$cleaned_command"
     fi
-
-  done
-  # libère la mémoire
-  unset username
-  unset botname
-  unset programme
-  unset stdout
-  unset stdin
-  unset user_command
-  unset cleaned_command
-  unset command
   unset file
-  # fermer les descripteurs de fichiers
-  
+  done  
 }
+
 # lance le programme avec les arguments fournis 
 chat-bot "$@"
