@@ -7,7 +7,7 @@
 
 function chat-bot() {
   if [[ $# -gt 2 ]]; then
-    echo "chat-bot destinataire [pseudo]" >&2
+    echo ""chat-bot destinataire [pseudo]"" >&3
     exit 1
   fi
 
