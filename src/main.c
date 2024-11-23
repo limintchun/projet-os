@@ -7,437 +7,621 @@
 // But du programme : programme chat permettant a deux utilisateurs de discuter a l'aide de pipes nommes.
 
 
+// DECLARATION DES INCLUDES
 #include <stdio.h>
 #include <string.h>
+#include <stdatomic.h>
+#include <stdbool.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <errno.h>
-#include <ctype.h>
-#include <stdbool.h>
 #include <signal.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 
 
-#define MAX_LENGHT_USERNAME 30
-#define DEFAULT_BUFFER_SIZE 1000
-#define SHARED_MEMORY_SIZE  4096
-#define BOT_MODE           "--bot"
-#define MANUAL_MODE        "--manuel"
+// DECLARATION DES DEFINES
+#define MAX_LENGTH_USERNAME   30
+#define DECONNEXION_CODE      0
+#define ARGV_CODE             1
+#define LENGTH_USERNAME_CODE  2  
+#define PUNCTUATION_CODE      3
+#define SIGINT_NOPIPE_CODE    4
+#define UNKNOWN_MODE_CODE     5
+#define FATAL_ERROR_CODE      6
+#define KILL_PROCESS_CODE     7
+#define PIPE_NAME_SIZE        256
+#define SHARED_MEMORY_SIZE    4096
+#define BANNED_PUNCTUATION    ".-/[]"
+#define BOT_MODE              "--bot"
+#define MANUAL_MODE           "--manuel"
+#define PRESTIGE_MODE         "--prestige"
 
 
+// STRUCTURE POUR CENTRALISER TOUTES LES INFORMATIONS/RESSOURCES UTILES AU PROGRAMME
 typedef struct {
-   char pipe_user1_user2[DEFAULT_BUFFER_SIZE];
-   char pipe_user2_user1[DEFAULT_BUFFER_SIZE];
-   const char* user1;
-   const char* user2;
-   bool manual_mode;
-   bool bot_mode;
-   bool reading_pipe_open;
-   bool writing_pipe_open;
-   bool pipes_created;
-} ChatConfiguration;
+    // Informations concernant la configuration du chat ; noms, modes de lancement
+    const char* user1;
+    const char* user2;
+    bool manual_mode;
+    bool bot_mode;
+    bool prestige_mode;
+    // Informations utiles au moment de terminer le programme
+    bool pipes_opened;
+    pid_t second_process_pid;
+    // Ressources partagees necessitant un clean ; pipes, memoire partagee, gestion dynamique des messages
+    char pipe_user1_user2[PIPE_NAME_SIZE];
+    char pipe_user2_user1[PIPE_NAME_SIZE];
+    int shared_memory_segment_id;
+    char* shared_memory;
+    FILE* writing_stream;
+    FILE* reading_stream;
+    char* sending_buffer;
+    size_t sending_buffer_size;
+    char* receiving_buffer;
+    size_t receiving_buffer_size;
+} ChatData;
 
 
-void initializeChatConfiguration(ChatConfiguration* chat_configuration);
-void parseUsernames(char* argv[], int argv_index, const char* special_name, ChatConfiguration* chat_configuration);
-void checkParseArgv(int argc, char* argv[], ChatConfiguration* chat_configuration);
-void sharedMemoryCleaning();
-void initializeSharedMemory();
-void initializeCreatePipes(ChatConfiguration* chat_configuration);
-void printUsernames(bool oneself, ChatConfiguration* chat_configuration);
-void pipesCleaning(ChatConfiguration* chat_configuration);
-void sigpipeHandler(int received_signal);
-void sigintMainProcessHandler(int received_signal);
-void sigtermSecondProcessHandler(int received_signal);
-void sigintSecondProcessHandler();
-void displayPendingMessages(ChatConfiguration* chat_configuration);
-void mainProcessHandling(ChatConfiguration* chat_configuration);
-void secondProcessHandling(ChatConfiguration* chat_configuration);
-int main(int argc, char* argv[]);
+// DECLARATION DES VARIABLES GLOBALES
+volatile sig_atomic_t sigint_catched = 0;
+volatile sig_atomic_t sigpipe_catched = 0;
+volatile sig_atomic_t sigusr_catched = 0;
+volatile sig_atomic_t sigterm_catched = 0;
 
 
-// Variable globale pour acceder a la structure dans le gestionnaire de signal.
-ChatConfiguration* global_chat_configuration = NULL;
-// Variable globale pour identifier le PID dans le gestionnaire de signal afin de terminer l'enfant.
-pid_t global_second_process_pid;
-// Variable globale pour identifier la memoire partagee.
-int global_shared_memory_id;
-char* global_shared_memory = NULL;
+// DECLARATION DES PROTOTYPES
+static void signalsHandler(int signal);
+void initializeChatData(ChatData* chat_data);
+void initializeSignalsHandler();
+void ignoreSigint();
+void initializePipes(ChatData* chat_data);
+void initializeSharedMemory(ChatData* chat_data);
+bool parseUsernames(char* username);
+void parseArgv(int argc, char* argv[], ChatData* chat_data);
+void displayUsernames(bool oneself, ChatData* chat_data);
+void displayPendingMessages(ChatData* chat_data);
+void storeMessageInSharedMemory(char* message, ChatData* chat_data);
+void cleanSharedMemory(ChatData* chat_data);
+void cleanPipes(ChatData* chat_data);
+void cleanStreamsBuffers(ChatData* chat_data);
+void sigintMonitor(ChatData* chat_data);
+void sigtermMonitor(ChatData* chat_data);
+void sigpipeMonitor(ChatData* chat_data);
+void sigusrMonitor(ChatData* chat_data);
+void signalsMonitor(ChatData* chat_data);
+void terminateProgram(bool is_error, ChatData* chat_data);
+void secondProcessHandler(ChatData* chat_data);
+void mainProcessHandler(ChatData* chat_data);
 
 
-void initializeChatConfiguration(ChatConfiguration* chat_configuration) {
-   global_chat_configuration = chat_configuration;
-   chat_configuration->user1 = NULL;
-   chat_configuration->user2 = NULL;
-   chat_configuration->manual_mode = false;
-   chat_configuration->bot_mode = false;
-   chat_configuration->reading_pipe_open = false;
-   chat_configuration->writing_pipe_open = false;
-   chat_configuration->pipes_created = false;
-}
-
-
-void parseUsernames(char* argv[], int argv_index, const char* special_name, ChatConfiguration* chat_configuration) {
-   if (special_name != NULL) {
-      if (argv_index == 1) {
-         chat_configuration->user1 = special_name;
-      }
-      else {
-         chat_configuration->user2 = special_name;
-      }
-   }
-   else {
-      if (argv_index == 1) {
-         chat_configuration->user1 = argv[argv_index];
-      }
-      else {
-         chat_configuration->user2 = argv[argv_index];
-      }
-   }
-}
-
-
-void checkParseArgv(int argc, char* argv[], ChatConfiguration* chat_configuration) {
-   if (3 > argc)  {
-      fprintf(stderr, "chat pseudo_utilisateur pseudo_destinataire [--bot] [--manuel]\n");
-      exit(1);
-   }
-   else {
-      for (int i = 1; i < 3; i++) {
-         // On ne regarde que les deux premiers params. argv[1] et argv[2] correspondant aux pseudonymes
-         if (strlen(argv[i]) > MAX_LENGHT_USERNAME) {
-            fprintf(stderr, "Error : the maximum length of usernames is 30.\n");
-            exit(2);
-         }
-         // CHECK IF --NAME OR NAME WITHOUT "--"
-         else if (strcmp(argv[i], "--bot") == 0) {
-            parseUsernames(argv, i, "Bot", chat_configuration);
-         } 
-         else if (strcmp(argv[i], "--manuel") == 0) {
-            parseUsernames(argv, i, "Manuel", chat_configuration);
-         }
-         else {
-            for (size_t j = 0; j < strlen(argv[i]); j++) {
-            // On parcourt chaque caractere j de argv[i] avec argv[i][j]
-            // On appelle ispunct() pour verifier s'il y a un caractere de ponctuation dans chaque param.
-            // size_t pour la variable j == type de retour de strlen() (long unsigned int)
-               if (ispunct((unsigned char)argv[i][j])) {
-                  fprintf(stderr, "Error : punctuation characters are forbidden for usernames.\n");
-                  exit(3);
-               }
-            }
-            parseUsernames(argv, i, NULL, chat_configuration);
-         }  
-      }
-      if (argc == 4) {
-         if (strcmp(argv[3], BOT_MODE) == 0) {
-            chat_configuration->bot_mode = true;
-         }
-         else if (strcmp(argv[3], MANUAL_MODE) == 0) {
-            chat_configuration->manual_mode = true;
-         }
-      }
-      else if (argc == 5) {
-         if (strcmp(argv[3], BOT_MODE) == 0 || strcmp(argv[4], BOT_MODE) == 0) {
-            chat_configuration->bot_mode = true;
-         }
-         if (strcmp(argv[3], MANUAL_MODE) == 0 || strcmp(argv[4], MANUAL_MODE) == 0) {
-            chat_configuration->manual_mode = true;
-         }
-      }
-   }
-}
-
-
-void sharedMemoryCleaning() {
-   if (global_shared_memory != NULL) {
-      shmdt(global_shared_memory);
-      shmctl(global_shared_memory_id, IPC_RMID, NULL);
-   }
-}
-
-
-void initializeSharedMemory() {
-   global_shared_memory_id = shmget(IPC_PRIVATE, SHARED_MEMORY_SIZE, IPC_CREAT | 0666);
-   if (global_shared_memory_id == -1) {
-      perror("Error during the attempt to create shared memory.\n");
-      exit(1);
-   }
-   global_shared_memory = (char *)shmat(global_shared_memory_id, NULL, 0);
-   if (global_shared_memory == (char *)-1) {
-      perror("Error during the attempt to link shared memory.\n");
-      exit(1);
-   }
-   memset(global_shared_memory, 0, SHARED_MEMORY_SIZE);
-}
-
-
-void initializeCreatePipes(ChatConfiguration* chat_configuration) {
-   // Pourquoi utiliser snprintf et non sprintf ?
-   // Meilleure version de sprintf car on se limite avec une taille de buffer.
-   // Pas avoir de depassements (buffer overflows).
-   // Tronque la sortie (coupe les donnees) en cas de buffer overflows.
-   snprintf(chat_configuration->pipe_user1_user2, DEFAULT_BUFFER_SIZE, "/tmp/%s-%s.chat", 
-   chat_configuration->user1, chat_configuration->user2);
-   snprintf(chat_configuration->pipe_user2_user1, DEFAULT_BUFFER_SIZE, "/tmp/%s-%s.chat", 
-   chat_configuration->user2, chat_configuration->user1);
-
-   if (mkfifo(chat_configuration->pipe_user1_user2, 0666) == -1 && errno != EEXIST) {
-      perror("mkfifo() error ; pipe hasn't been created.\n");
-      unlink(chat_configuration->pipe_user1_user2);
-      exit(1);
-   }
-   if (mkfifo(chat_configuration->pipe_user2_user1, 0666) == -1 && errno != EEXIST) {
-      perror("mkfifo() error ; pipe hasn't been created.\n");
-      unlink(chat_configuration->pipe_user2_user1);
-      exit(1);
-   }
-   chat_configuration->pipes_created = true;
-}
-
-
-void printUsernames(bool oneself, ChatConfiguration* chat_configuration) {
-   if (chat_configuration->bot_mode && oneself) {
-      printf("%s (vous) : ", chat_configuration->user1);
-   }
-   else if (chat_configuration->bot_mode && !oneself) {
-      printf("%s : ", chat_configuration->user2);
-   }
-   else {
-      // Affiche en rouge et souligne.
-      if (oneself) {
-         printf("\x1b[31m\x1B[4m%s (vous)\x1B[0m\x1b[0m : ", chat_configuration->user1);
-      }
-      else {
-         printf("\x1b[31m\x1B[4m%s\x1B[0m\x1b[0m : ", chat_configuration->user2);
-      }
-   }
-}
-
-
-void pipesCleaning(ChatConfiguration* chat_configuration) {
-   if (chat_configuration->pipes_created) {
-      // F_OK return 0 si le fichier existe.
-      if (access(chat_configuration->pipe_user1_user2, F_OK) == 0) {
-         unlink(chat_configuration->pipe_user1_user2);
-      }
-      if (access(chat_configuration->pipe_user2_user1, F_OK) == 0) {
-         unlink(chat_configuration->pipe_user2_user1);
-      }
-   }
-}
-
-
-void sigpipeHandler(int received_signal) {
-   if (received_signal == SIGPIPE) {
-      fprintf(stderr, "%s has left the chat.\n", global_chat_configuration->user2);
-      pipesCleaning(global_chat_configuration);
-      exit(0);
-   }
-}
-
-
-void sigintMainProcessHandler(int received_signal) {
-   if (received_signal == SIGINT) {
-      fprintf(stderr, "\nYou pressed CTRL+C.\n");
-      if (global_chat_configuration->manual_mode) {
-         displayPendingMessages(global_chat_configuration);
-      }
-      int exit_code = (!global_chat_configuration->reading_pipe_open && 
-      !global_chat_configuration->writing_pipe_open) ? 4 : 0;
-      
-      if (global_second_process_pid > 0) {
-         kill(global_second_process_pid, SIGTERM);
-         // Attendre la terminaison du second processus pour ne pas avoir des processus zombies.
-         // Le second processus ne doit pas continuer apres la terminaison (-> processus zombies).
-         waitpid(global_second_process_pid, NULL, 0); 
-      }
-      pipesCleaning(global_chat_configuration);
-      sharedMemoryCleaning();
-      exit(exit_code);
-   }
-}
-
-
-void sigtermSecondProcessHandler(int received_signal) {
-   if (received_signal == SIGTERM) {
-      pipesCleaning(global_chat_configuration);
-      exit(0);
-   }
-}
-
-
-void sigintSecondProcessHandler() {
-   // Ne pas avoir une interruption par CTRL+C dans un second processus.
-   // SIG_IGN = constante.
-   // SIG_IGN indique au progranne d'ignorer le signal SIGINT (CTRL+C qui termine immediatement un programme par defaut).
-   // SIGINT n'est donc pas transmis au processus.
-   signal(SIGINT, SIG_IGN);
-   // Le second processus doit gerer le signal SIGTERM envoye par le main processus.
-   signal(SIGTERM, sigtermSecondProcessHandler);
-}
-
-
-void displayPendingMessages(ChatConfiguration* chat_configuration) {
-   // if (strlen(global_shared_memory) > 0) {
-   //    printf("\r\033[K");
-   //    printUsernames(false, chat_configuration);
-   //    printf("%s\n", global_shared_memory);
-   //    fflush(stdout);
-   //    memset(global_shared_memory, 0, SHARED_MEMORY_SIZE); 
-   // }
-   if (strlen(global_shared_memory) > 0) {
-      char messages_copy[SHARED_MEMORY_SIZE];
-      strncpy(messages_copy, global_shared_memory, SHARED_MEMORY_SIZE - 1);
-      messages_copy[SHARED_MEMORY_SIZE - 1] = '\0'; 
-
-      char *message = strtok(messages_copy, "\n");
-      while (message != NULL) {
-         printf("\r\033[K");
-         printUsernames(false, chat_configuration);
-         printf("%s\n", message);
-         fflush(stdout);
-         message = strtok(NULL, "\n");
-        }
-      memset(global_shared_memory, 0, SHARED_MEMORY_SIZE);
+// CODE
+static void signalsHandler(int signal) {
+    switch (signal) {
+        case    SIGINT: sigint_catched = 1;
+                break;
+        case    SIGPIPE: sigpipe_catched = 1;
+                break;
+        case    SIGUSR1: sigusr_catched = 1;
+                break;
+        case    SIGTERM: sigterm_catched = 1;
+                break;
+        default: break;
     }
 }
 
 
-void mainProcessHandling(ChatConfiguration* chat_configuration) {
-   // int fd_user1_user2_write = open(chat_configuration->pipe_user1_user2, O_WRONLY);
-   // if (fd_user1_user2_write == -1) {
-   //    perror("An error occurred during the attempt to open the writing pipe.\n");
-   //    pipesCleaning(chat_configuration);
-   //    exit(1);
-   // }
-   int fd_user1_user2_write;
-   while ((fd_user1_user2_write = open(chat_configuration->pipe_user1_user2, O_WRONLY | O_NONBLOCK)) == -1) {
-      // O_NONBLOCK evite que open bloque directement le programme.
-      static const char* dots[] = {".", "..", "..."};
-      static int dot_index = 0;
-      printf("\rWaiting for %s connecting%s    ", chat_configuration->user2, dots[dot_index]);
-      fflush(stdout);
-      dot_index = (dot_index + 1) % 3;
-      usleep(500000); 
-   }
+void initializeChatData(ChatData* chat_data) {
+    chat_data->user1 = NULL;
+    chat_data->user2 = NULL;
+    chat_data->manual_mode = false;
+    chat_data->bot_mode = false;
+    chat_data->prestige_mode = false;
 
-   printf("\r%*s\r", (int)(strlen("Waiting for %s connecting...") + strlen(chat_configuration->user2) + 4), "");
-   fflush(stdout);
+    chat_data->pipes_opened = false;
+    chat_data->second_process_pid = -1;
 
-   chat_configuration->writing_pipe_open = true; 
-
-   char sended_message[DEFAULT_BUFFER_SIZE];
-   if (!chat_configuration->bot_mode) {
-      printUsernames(true, chat_configuration);
-   }
-   while (fgets(sended_message, DEFAULT_BUFFER_SIZE, stdin) != NULL) {
-      size_t len_message = strlen(sended_message);
-      if (len_message > 0 && sended_message[len_message-1] == '\n') {
-         sended_message[len_message-1] = '\0';
-      }
-      if (write(fd_user1_user2_write, sended_message, strlen(sended_message)) == -1) {
-         perror("Impossible d'ouvrir le pipe pour ecrire.\n");
-         close(fd_user1_user2_write);
-         pipesCleaning(chat_configuration);
-         exit(1);
-      }
-      if (chat_configuration->manual_mode) {
-         displayPendingMessages(chat_configuration);
-      }
-      if (!chat_configuration->bot_mode) {
-         printUsernames(true, chat_configuration);
-         fflush(stdout);
-      }
-   }
-   close(fd_user1_user2_write);
-   chat_configuration->writing_pipe_open = false;   
+    chat_data->shared_memory_segment_id = -1;
+    chat_data->shared_memory = NULL;
+    chat_data->writing_stream = NULL;
+    chat_data->reading_stream = NULL;
+    chat_data->sending_buffer = NULL;
+    chat_data->sending_buffer_size = 0;
+    chat_data->receiving_buffer = NULL;
+    chat_data->receiving_buffer_size = 0;
 }
 
 
-void secondProcessHandling(ChatConfiguration* chat_configuration) {
-   int fd_user2_user1_read = open(chat_configuration->pipe_user2_user1, O_RDONLY);
-   if (fd_user2_user1_read == -1) {
-      perror("An error occurred during the attempt to open the reading pipe.\n");
-      pipesCleaning(chat_configuration);
-      exit(1);
-   }
-   chat_configuration->reading_pipe_open = true;
+void initializeSignalsHandler() {
+    struct sigaction action;
+    action.sa_handler = signalsHandler;
+    action.sa_flags = 0; // Relance une fonction bloquante en cas de signal
+    sigemptyset(&action.sa_mask);
 
-   char received_message[DEFAULT_BUFFER_SIZE];
-   ssize_t readed_char;
-   while(1) {
-      readed_char = read(fd_user2_user1_read, received_message, DEFAULT_BUFFER_SIZE-1);
-      if (readed_char == -1) {
-         perror("Impossible d'ouvrir le pipe pour lire.\n");
-         close(fd_user2_user1_read);
-         pipesCleaning(chat_configuration);
-         exit(1);
-      }
-      else if (readed_char > 0) {
-         // '\0' sert a eviter de lire dans la memoire au-dela de la taille du tableau.
-         // printf peut donc savoir ou la chaine de caracteres se termine.
-         received_message[readed_char] = '\0';
-         if (chat_configuration->manual_mode) {
-            strncat(global_shared_memory, received_message, SHARED_MEMORY_SIZE - strlen(global_shared_memory) - 1);
-            strncat(global_shared_memory, "\n", SHARED_MEMORY_SIZE - strlen(global_shared_memory) - 1);
-            printf("\a");
-            fflush(stdout);
-         }
-         else {
-            // "\r\033[K" fait un retour a la ligne + supprime tout son contenu.
-            printf("\r\033[K"); 
-            printUsernames(false, chat_configuration);
-            printf("%s\n", received_message);
-            if (!chat_configuration->bot_mode) {
-               printUsernames(true, chat_configuration);
+    if (sigaction(SIGINT, &action, NULL) < 0) {
+        perror("\nFailed to set handler for SIGINT");
+    }
+    if (sigaction(SIGPIPE, &action, NULL) < 0) {
+        perror("\nFailed to set handler for SIGPIPE");
+    }
+    if (sigaction(SIGUSR1, &action, NULL) < 0) {
+        perror("\nFailed to set handler for SIGUSR1");
+    }
+    if (sigaction(SIGTERM, &action, NULL) < 0) {
+        perror("\nFailed to set handler for SIGTERM");  
+    }
+}
+
+
+void ignoreSigint () {
+    struct sigaction ignore_action;
+    ignore_action.sa_handler = SIG_IGN;
+    ignore_action.sa_flags = 0;
+    sigemptyset(&ignore_action.sa_mask);
+
+    if (sigaction(SIGINT, &ignore_action, NULL) < 0) {
+        perror("\nFailed to set handler for ignoring SIGINT in second process");
+    }
+}
+
+
+void initializePipes(ChatData* chat_data) {
+    if (snprintf(chat_data->pipe_user1_user2, PIPE_NAME_SIZE, "/tmp/%s-%s.chat", 
+                chat_data->user1, chat_data->user2) >= PIPE_NAME_SIZE) {
+        fprintf(stderr, "Error ; pipe user1 to user2 name exceeds buffer size.\n");
+        terminateProgram(true, chat_data);
+    }
+    if (snprintf(chat_data->pipe_user2_user1, PIPE_NAME_SIZE, "/tmp/%s-%s.chat", 
+                chat_data->user2, chat_data->user1) >= PIPE_NAME_SIZE) {
+        fprintf(stderr, "Error ; pipe user2 to user1 name exceeds buffer size.\n");
+        terminateProgram(true, chat_data);
+    }
+
+    if (mkfifo(chat_data->pipe_user1_user2, 0666) == -1 && errno != EEXIST) {
+        perror("\nmkfifo() error ; pipe user1 to user2 hasn't been created");
+        terminateProgram(true, chat_data);
+    }
+    if (mkfifo(chat_data->pipe_user2_user1, 0666) == -1 && errno != EEXIST) {
+        perror("\nmkfifo() error ; pipe user2 to user1 hasn't been created");
+        terminateProgram(true, chat_data);
+    }
+}
+
+
+void initializeSharedMemory(ChatData* chat_data) {
+    chat_data->shared_memory_segment_id = shmget(IPC_PRIVATE, SHARED_MEMORY_SIZE, IPC_CREAT | 0666);
+    if (chat_data->shared_memory_segment_id == -1) {
+        perror("\nFailed to create shared memory");
+        terminateProgram(true, chat_data);
+    }
+    chat_data->shared_memory = (char*)shmat(chat_data->shared_memory_segment_id, NULL, 0);
+    if (chat_data->shared_memory == (void*)-1) {
+        perror("\nFailed to attach shared memory");
+        terminateProgram(true, chat_data);
+    }
+    memset(chat_data->shared_memory, 0, SHARED_MEMORY_SIZE);
+}
+
+
+bool parseUsernames(char* username) {
+    if (strcmp(username, BOT_MODE) == 0 || strcmp(username, MANUAL_MODE) == 0 || strcmp(username, PRESTIGE_MODE) == 0) {
+        return false;
+    }
+    else {
+        for (size_t i = 0; i < strlen(username); i++) {
+            if (strchr(BANNED_PUNCTUATION, username[i]) != NULL) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
+void parseArgv(int argc, char* argv[], ChatData* chat_data) {
+    if (3 > argc)  {
+        fprintf(stderr, "chat pseudo_utilisateur pseudo_destinataire [--bot] [--manuel]\n");
+        exit(ARGV_CODE);
+    }
+    for (int i = 1; i < 3; i++) {
+        if (strlen(argv[i]) > MAX_LENGTH_USERNAME) {
+            fprintf(stderr, "Error ; the maximum length of usernames is 30.\n");
+            exit(LENGTH_USERNAME_CODE);
+        }
+        else if (parseUsernames(argv[i])) {
+            fprintf(stderr, "Error ; punctuation characters are forbidden for usernames.\n");
+            exit(PUNCTUATION_CODE);
+        }
+    }
+    chat_data->user1 = argv[1];
+    chat_data->user2 = argv[2];
+
+    if (3 < argc) {
+        for (int i = 3; i < argc; i++) {
+            if (strcmp(argv[i], BOT_MODE) == 0) {
+                chat_data->bot_mode = true;
+            }
+            else if (strcmp(argv[i], MANUAL_MODE) == 0) {
+                chat_data->manual_mode = true;
+            }
+            else if (strcmp(argv[i], PRESTIGE_MODE) == 0) {
+                chat_data->prestige_mode = true;
+            }
+            else {
+                fprintf(stderr, "Error ; allowed modes are --bot, --manuel and --prestige.\n");
+                exit(UNKNOWN_MODE_CODE);
+            }
+        }
+    }
+}
+
+
+void displayUsernames(bool oneself, ChatData* chat_data) {
+    if (chat_data->bot_mode && oneself) {
+        printf("[%s] ", chat_data->user1);
+    }
+    else if (chat_data->bot_mode && !oneself) {
+        printf("[%s] ", chat_data->user2);
+    }
+    else if (!chat_data->bot_mode && !oneself) {
+        printf("[\x1b[31m\x1B[4m%s\x1B[0m\x1b[0m] ", chat_data->user1);
+    }
+    else {
+        printf("[\x1b[31m\x1B[4m%s\x1B[0m\x1b[0m] ", chat_data->user2);
+    }
+}
+
+
+void displayPendingMessages(ChatData* chat_data) {
+    if (strlen(chat_data->shared_memory) > 0) {
+        bool new_message = true;
+        for (size_t i = 0; i < strlen(chat_data->shared_memory); i++) {
+            if (new_message) {
+                displayUsernames(false, chat_data);
+                new_message = false;
+            }
+
+            putchar(chat_data->shared_memory[i]);
+
+            if (chat_data->shared_memory[i] == '\n') {
+                new_message = true;
+            }
+        }
+        fflush(stdout);
+        memset(chat_data->shared_memory, 0, SHARED_MEMORY_SIZE);
+    }
+}
+
+
+void storeMessageInSharedMemory(char* message, ChatData* chat_data) {
+    if (strlen(message) + strlen(chat_data->shared_memory) + 1 > SHARED_MEMORY_SIZE) {
+        displayPendingMessages(chat_data);
+        displayUsernames(false, chat_data);
+        printf("%s", message);
+    }
+    else {
+        strncat(chat_data->shared_memory, message, SHARED_MEMORY_SIZE - strlen(chat_data->shared_memory) - 1);
+    }
+}
+
+
+void cleanSharedMemory(ChatData* chat_data) {
+    if (chat_data->shared_memory != NULL) {
+        if (shmdt(chat_data->shared_memory) == -1) {
+            perror("\nFailed to detach shared memory");
+        }
+        chat_data->shared_memory = NULL;
+    }
+    if (chat_data->shared_memory_segment_id != -1) {
+        struct shmid_ds info;
+        if (shmctl(chat_data->shared_memory_segment_id, IPC_STAT, &info) == -1) {
+            perror("\nError ; shared memory segment to remove does not exist or is inaccessible");
+        } 
+        else {
+            if (shmctl(chat_data->shared_memory_segment_id, IPC_RMID, NULL) == -1) {
+                perror("\nFailed to remove shared memory");
+            } 
+        }
+        chat_data->shared_memory_segment_id = -1;
+    }
+}
+
+
+void cleanPipes(ChatData* chat_data) {
+    if (access(chat_data->pipe_user1_user2, F_OK) == 0) {
+        if (unlink(chat_data->pipe_user1_user2) == -1) {
+            perror("\nFailed to remove the pipe user1 to user2");
+        }
+    }
+    if (access(chat_data->pipe_user2_user1, F_OK) == 0) {
+        if (unlink(chat_data->pipe_user2_user1) == -1) {
+            perror("\nFailed to remove the pipe user2 to user1");
+        }
+    }
+}
+
+
+void cleanStreamsBuffers(ChatData* chat_data) {
+    if (chat_data->writing_stream != NULL) {
+        fclose(chat_data->writing_stream);
+        chat_data->writing_stream = NULL;
+    }
+    if (chat_data->reading_stream != NULL) {
+        fclose(chat_data->reading_stream);
+        chat_data->reading_stream = NULL;
+    }
+
+    if (chat_data->sending_buffer != NULL) {
+        free(chat_data->sending_buffer);
+        chat_data->sending_buffer = NULL;
+    }
+    if (chat_data->receiving_buffer != NULL) {
+        free(chat_data->receiving_buffer);
+        chat_data->receiving_buffer = NULL;
+    }
+}
+
+
+void sigintMonitor(ChatData* chat_data) {
+    if (sigint_catched) {
+        printf("\nYou pressed CTRL+C.\n");
+        if (chat_data->manual_mode && chat_data->pipes_opened) {
+            displayPendingMessages(chat_data);
+        }
+        if (chat_data->prestige_mode) {
+            printf("Exiting the chat.\n");
+        }
+        terminateProgram(false, chat_data);
+    }
+}
+
+
+void sigtermMonitor(ChatData* chat_data) {
+    if (sigterm_catched) {
+        cleanStreamsBuffers(chat_data);
+        exit(KILL_PROCESS_CODE);
+    }
+}
+
+
+void sigpipeMonitor(ChatData* chat_data) {
+    if (sigpipe_catched) {
+        if (chat_data->prestige_mode) {
+            printf("%s left the chat.\n", chat_data->user2);
+            printf("Exiting the chat.\n");
+        }
+        terminateProgram(false, chat_data);
+    }
+}
+
+
+void sigusrMonitor(ChatData* chat_data) {
+    if (sigusr_catched) {
+        terminateProgram(true, chat_data);
+    }
+}
+
+
+void signalsMonitor(ChatData* chat_data) {
+    sigintMonitor(chat_data);
+    sigpipeMonitor(chat_data);
+    sigusrMonitor(chat_data);
+}
+
+
+void terminateProgram(bool is_error, ChatData* chat_data) {
+    // Kill le processus fils que s'il existe
+    if (chat_data->second_process_pid > 0) {
+        kill(chat_data->second_process_pid, SIGTERM);
+        waitpid(chat_data->second_process_pid, NULL, 0);
+    }
+
+    // Clean de toutes les ressources
+    cleanSharedMemory(chat_data);
+    cleanPipes(chat_data);
+    cleanStreamsBuffers(chat_data);
+
+    // Terminaison avec le code adapte
+    if (is_error) {
+        exit(FATAL_ERROR_CODE);
+    }
+    else if (!chat_data->pipes_opened) {
+        exit(SIGINT_NOPIPE_CODE);
+    }
+    else {
+        exit(DECONNEXION_CODE);
+    }
+}
+
+
+void secondProcessHandler(ChatData* chat_data) {
+    // Partie pour lancer la communication (ouverture du pipe de lecture)
+    int fd_user2_user1_read;
+    do {
+        sigtermMonitor(chat_data);
+        fd_user2_user1_read = open(chat_data->pipe_user2_user1, O_RDONLY);
+    } while (fd_user2_user1_read == -1 && errno == EINTR);
+
+    if (fd_user2_user1_read == -1) {
+        perror("\nFailed to open the user2 to user1 pipe (reading pipe)");
+        kill(getppid(), SIGUSR1);
+    }
+    sigtermMonitor(chat_data);
+
+    chat_data->reading_stream = fdopen(fd_user2_user1_read, "r");
+    if (chat_data->reading_stream == NULL) {
+        perror("Failed to convert file descriptor to stream for reading");
+        close(fd_user2_user1_read); // Doit quand meme fermer le descripteur de fichier
+        kill(getppid(), SIGUSR1);
+    }
+    sigtermMonitor(chat_data);
+
+    chat_data->pipes_opened = true; // Pipes ouverts
+
+    // Partie du chat
+    size_t index = 0;
+
+    do {
+        sigtermMonitor(chat_data);
+
+        int c = fgetc(chat_data->reading_stream); // Lecture caractere par caractere dans le flux de lecture
+        if (feof(chat_data->reading_stream) || ferror(chat_data->reading_stream)) {
+            // Savoir si le flux est coupe car le pere a envoye SIGTERM
+            sigtermMonitor(chat_data); 
+            // Savoir si le flux est coupe car l'autre terminal a quitte le chat
+            // Le pere ne devrait pas avoir besoin d'ecrire un message de plus apres la fermeture pour catch SIGPIPE
+            kill(getppid(), SIGPIPE);
+        }
+        sigtermMonitor(chat_data); 
+
+        // Augmentation dynamique de la taille du tampon
+        // +1 pour le nouveau caractere lu
+        // +1 pour '\0' indiquant la terminaison de la chaine en construction
+        char* new_buffer = realloc(chat_data->receiving_buffer, chat_data->receiving_buffer_size + 2);
+        if (new_buffer == NULL) {
+            perror("\nFaild to allocate memory in the second process");
+            break;
+        }
+        // Mise a jour du pointeur du tampon
+        chat_data->receiving_buffer = new_buffer;
+
+        // Ajout du caractere au tampon
+        // On indique la prochaine position pour ecrire le prochain caractere
+        // Mise a jour de sa taille pour "correspondre" au nouvel ajout
+        chat_data->receiving_buffer[index++] = (char)c;
+        chat_data->receiving_buffer_size++;
+
+        if (c == '\n') {
+            // Le enter permet de savoir que la fin du message est atteinte et donc on a un message complet
+            // Le tampon termine par '\0' indiquant la fin de la chaine
+            chat_data->receiving_buffer[index] = '\0';
+            if (chat_data->manual_mode) {
+                printf("\a");
+                storeMessageInSharedMemory(chat_data->receiving_buffer, chat_data);
+            }
+            else {
+                displayUsernames(false, chat_data);
+                printf("%s", chat_data->receiving_buffer);
             }
             fflush(stdout);
-         }
-      }
+            // On remet tout a zero pour preparer la prochaine gestion dynamique du prochain message
+            free(chat_data->receiving_buffer); 
+            chat_data->receiving_buffer = NULL;
+            chat_data->receiving_buffer_size = 0;
+            index = 0;
+        }
 
-   }
-   close(fd_user2_user1_read);
-   chat_configuration->reading_pipe_open = false;
+        sigtermMonitor(chat_data);
+    } while (true);
+
+    kill(getppid(), SIGUSR1);
+    sigtermMonitor(chat_data); 
+}
+
+
+void mainProcessHandler(ChatData* chat_data) {
+    // Partie pour lancer la communication (ouverture du pipe d'ecriture)
+    int fd_user1_user2_write;
+    do {
+        signalsMonitor(chat_data);
+        fd_user1_user2_write = open(chat_data->pipe_user1_user2, O_WRONLY);
+    } while (fd_user1_user2_write == -1 && errno == EINTR);
+
+    if (fd_user1_user2_write == -1) {
+        perror("\nFailed to open the user1 to user2 pipe (writing pipe)");
+        terminateProgram(true, chat_data);
+    }
+
+    chat_data->writing_stream = fdopen(fd_user1_user2_write, "w");
+    if (chat_data->writing_stream == NULL) {
+        perror("\nFailed to convert file descriptor to stream for writing");
+        close(fd_user1_user2_write); // Doit quand meme fermer le descripteur de fichier
+        terminateProgram(true, chat_data);
+    }
+
+    chat_data->pipes_opened = true; // Pipes ouverts
+
+    // Partie du chat
+    if (chat_data->prestige_mode) {
+        printf("%s joined the chat.\n", chat_data->user2);
+    }
+
+    do {
+        signalsMonitor(chat_data);
+
+        // Lecture d'une ligne de texte introduite depuis le terminal
+        ssize_t read_input = getline(&chat_data->sending_buffer, &chat_data->sending_buffer_size, stdin);
+
+        // Un point de controle pour savoir la lecture du terminal a ete interrompue par un signal ou CTRL+D
+        if (read_input == -1) {
+            if (errno == EINTR) {
+                signalsMonitor(chat_data); // Verifie si l'interruption est en raison d'un signal
+            }
+            else if (feof(stdin)) {
+                // C'est un EOF donc l'utilisateur a utilise CTRL+D indiquant qu'il ne va plus ecrire sur stdin
+                printf("You pressed CTRL+D.\n");
+                terminateProgram(false, chat_data);
+            }
+        }
+
+        signalsMonitor(chat_data);
+
+        // Verifie si seul '\n' a ete introduit afin qu'il soit ignorer
+        if (read_input > 0) {
+            if (read_input != 1 || chat_data->sending_buffer[0] != '\n') {
+                if (!chat_data->bot_mode) {
+                    displayUsernames(true, chat_data);
+                    printf("%s", chat_data->sending_buffer);
+                }
+
+                if (chat_data->manual_mode) {
+                    displayPendingMessages(chat_data);
+                }
+
+                for (size_t i = 0; i < (size_t)read_input; i++) {
+                    if (fputc(chat_data->sending_buffer[i], chat_data->writing_stream) == EOF) {
+                        signalsMonitor(chat_data); // Verifie si EOF est en raison d'un signal
+                        perror("\nFailed to use stream for writing");
+                        terminateProgram(true, chat_data);
+                    }
+                }
+                fflush(chat_data->writing_stream);
+            }
+        }
+
+        signalsMonitor(chat_data);
+    } while (true);
 }
 
 
 int main(int argc, char* argv[]) {
-   ChatConfiguration chat_configuration;
-   initializeChatConfiguration(&chat_configuration);
+    ChatData chat_data;
+    initializeChatData(&chat_data);
+    initializeSignalsHandler();
+    
+    parseArgv(argc, argv, &chat_data);
 
-   checkParseArgv(argc, argv, &chat_configuration);
+    initializePipes(&chat_data);
 
-   if (chat_configuration.manual_mode) {
-      initializeSharedMemory();
-   }
+    if (chat_data.manual_mode) {
+        initializeSharedMemory(&chat_data);
+    }
 
-   signal(SIGINT, sigintMainProcessHandler);
-
-   initializeCreatePipes(&chat_configuration);
-
-   signal(SIGPIPE, sigpipeHandler);
-
-   global_second_process_pid = fork();
-   if (global_second_process_pid < 0) {
-      perror("fork() error ; an error during fork process occurred.\n");
-      pipesCleaning(&chat_configuration);
-      return 1;
-   }
-   else if (global_second_process_pid == 0) {
-      // Second processus : lire sur le pipe nomme adequat les messages et les afficher.
-      // Toujours ignorer les interruptions CTRL+C dans le second processus.
-      sigintSecondProcessHandler();
-      secondProcessHandling(&chat_configuration);
-   }
-   else {
-      // Processus d'origine : lire les messages et les transmettre sur le pipe nomme adequat.
-      mainProcessHandling(&chat_configuration);
-   }
-   return 0;
+    chat_data.second_process_pid = fork();
+    if (chat_data.second_process_pid < 0) {
+        perror("\nfork() error ; an error occurred during fork process");
+        terminateProgram(true, &chat_data);
+    }
+    else if (chat_data.second_process_pid == 0) {
+        ignoreSigint();
+        secondProcessHandler(&chat_data);
+    }
+    else {
+        mainProcessHandler(&chat_data);
+    }
+    return 0;
 }
