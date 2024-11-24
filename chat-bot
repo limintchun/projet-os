@@ -90,7 +90,7 @@ function chat-bot() {
   # Fonction pour créer une coproc (coprocessus) et exécuter le programme
   function create_coproc() {
     local programme="$1"
-    coproc CHAT_PIPES { eval "$programme"; }
+    coproc CHAT_PIPES { eval "$programme";
     # Vérifier si la coproc a bien démarré
     if [[ $? -ne 0 ]]; then
       echo "Erreur dans l'exécution de la commande coproc" >&2
