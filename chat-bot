@@ -94,8 +94,8 @@ function chat-bot() {
     # Vérifier si la coproc a bien démarré
     if [[ $? -ne 0 ]]; then
       echo "Erreur dans l'exécution de la commande coproc" >&2
-      exec {CHAT_PIPES[0]}>&- 
-      exec {CHAT_PIPES[1]}>&-
+      [[ -n "${CHAT_PIPES[0]}" ]] && exec {CHAT_PIPES[0]}>&-
+      [[ -n "${CHAT_PIPES[1]}" ]] && exec {CHAT_PIPES[1]}>&-
       exit 1
     fi
   }
