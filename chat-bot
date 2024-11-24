@@ -98,7 +98,7 @@ function chat-bot() {
       [[ -n "${CHAT_PIPES[1]}" ]] && exec {CHAT_PIPES[1]}>&-
       exit 1
     fi
-  }
+   }
 
   # Créer la coproc pour l'exécution du programme
   create_coproc "$programme"
