@@ -62,7 +62,7 @@ function chat-bot() {
     done <<< "$files"
   }
 
-  function find_word(){
+  function find_word() {
     # le mot-clé local indique que la variable sera libérée à la fin de la fonction
     local file="$1"
     local word="$2"
