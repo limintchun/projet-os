@@ -454,16 +454,20 @@ void secondProcessHandler(ChatData* chat_data) {
     if (fd_user2_user1_read == -1) {
         perror("\nFailed to open the user2 to user1 pipe (reading pipe)");
         kill(getppid(), SIGUSR1);
+        while (true) {
+            sigtermMonitor(chat_data);
+        }
     }
-    sigtermMonitor(chat_data);
 
     chat_data->reading_stream = fdopen(fd_user2_user1_read, "r");
     if (chat_data->reading_stream == NULL) {
         perror("Failed to convert file descriptor to stream for reading");
         close(fd_user2_user1_read); // Doit quand meme fermer le descripteur de fichier
         kill(getppid(), SIGUSR1);
+        while (true) {
+            sigtermMonitor(chat_data);
+        }
     }
-    sigtermMonitor(chat_data);
 
     chat_data->pipes_opened = true; // Pipes ouverts
 
@@ -474,14 +478,26 @@ void secondProcessHandler(ChatData* chat_data) {
         sigtermMonitor(chat_data);
 
         int c = fgetc(chat_data->reading_stream); // Lecture caractere par caractere dans le flux de lecture
-        if (feof(chat_data->reading_stream) || ferror(chat_data->reading_stream)) {
-            // Savoir si le flux est coupe car le pere a envoye SIGTERM
+        if (c == EOF) { // Le flux est interrompu soit par une erreur, un signal du pere ou une deconnexion de user2
+            // Verifier d'abord si le signal SIGTERM a ete recu depuis le pere
             sigtermMonitor(chat_data); 
-            // Savoir si le flux est coupe car l'autre terminal a quitte le chat
-            // Le pere ne devrait pas avoir besoin d'ecrire un message de plus apres la fermeture pour catch SIGPIPE
-            kill(getppid(), SIGPIPE);
+            if (feof(chat_data->reading_stream)) {
+                // Le flux est coupe car user2 a quitte le chat
+                // Signaler au pere que user2 a quitte le chat
+                // Le pere ne devrait pas avoir besoin d'ecrire un message de plus apres la fermeture pour catch SIGPIPE
+                kill(getppid(), SIGPIPE);
+                while (true) {
+                    sigtermMonitor(chat_data);
+                }
+            } else if (ferror(chat_data->reading_stream)) {
+                // En cas d'erreur de flux
+                perror("\nFailed to read the stream");
+                kill(getppid(), SIGUSR1);
+                while (true) {
+                    sigtermMonitor(chat_data);
+                }
+            }
         }
-        sigtermMonitor(chat_data); 
 
         // Augmentation dynamique de la taille du tampon
         // +1 pour le nouveau caractere lu
@@ -489,8 +505,12 @@ void secondProcessHandler(ChatData* chat_data) {
         char* new_buffer = realloc(chat_data->receiving_buffer, chat_data->receiving_buffer_size + 2);
         if (new_buffer == NULL) {
             perror("\nFaild to allocate memory in the second process");
-            break;
+            kill(getppid(), SIGUSR1);
+            while (true) {
+                sigtermMonitor(chat_data);
+            }
         }
+
         // Mise a jour du pointeur du tampon
         chat_data->receiving_buffer = new_buffer;
 
@@ -522,118 +542,11 @@ void secondProcessHandler(ChatData* chat_data) {
 
         sigtermMonitor(chat_data);
     } while (true);
-
-    kill(getppid(), SIGUSR1);
-    sigtermMonitor(chat_data); 
 }
 
 
-// void mainProcessHandler(ChatData* chat_data) {
-//     // Partie pour lancer la communication (ouverture du pipe d'ecriture)
-//     int fd_user1_user2_write;
-//     do {
-//         signalsMonitor(chat_data);
-//         fd_user1_user2_write = open(chat_data->pipe_user1_user2, O_WRONLY);
-//     } while (fd_user1_user2_write == -1 && errno == EINTR);
-
-//     if (fd_user1_user2_write == -1) {
-//         perror("\nFailed to open the user1 to user2 pipe (writing pipe)");
-//         terminateProgram(true, chat_data);
-//     }
-
-//     chat_data->writing_stream = fdopen(fd_user1_user2_write, "w");
-//     if (chat_data->writing_stream == NULL) {
-//         perror("\nFailed to convert file descriptor to stream for writing");
-//         close(fd_user1_user2_write); // Doit quand meme fermer le descripteur de fichier
-//         terminateProgram(true, chat_data);
-//     }
-
-//     chat_data->pipes_opened = true; // Pipes ouverts
-
-//     // Partie du chat
-//     if (chat_data->prestige_mode) {
-//         printf("%s joined the chat.\n", chat_data->user2);
-//     }
-
-//     do {
-//         signalsMonitor(chat_data);
-
-//         // Lecture d'une ligne de texte introduite depuis le terminal
-//         ssize_t read_input = getline(&chat_data->sending_buffer, &chat_data->sending_buffer_size, stdin);
-
-//         // Un point de controle pour savoir la lecture du terminal a ete interrompue par un signal ou CTRL+D
-//         // if (read_input == -1) {
-//         //     printf("CTRL C CATCH\n");
-//         //     if (errno == EINTR) {
-//         //         signalsMonitor(chat_data); // Verifie si l'interruption est en raison d'un signal
-//         //         printf("NE PASSE PAS DONC BLOQUE ICI\n");
-//         //     }
-//         //     else if (feof(stdin)) {
-//         //         // C'est un EOF donc l'utilisateur a utilise CTRL+D indiquant qu'il ne va plus ecrire sur stdin
-//         //         if (chat_data->prestige_mode) {
-//         //             printf("You pressed CTRL+D.\n");
-//         //         }
-//         //         terminateProgram(false, chat_data);
-//         //     }
-//         // }
-
-//         if (read_input == -1) {
-//             if (errno == EINTR) {
-//                 printf("BLOQUE ICI\n");
-//                 // Si on a reçu un signal d'interruption, vérifiez les signaux et continuez
-//                 signalsMonitor(chat_data);
-//                 continue;
-//             } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-//                 // Si aucune donnée n'est disponible, continuez la boucle
-//                 printf("EN ATTENTE\n");
-//                 continue;
-//             } else if (feof(stdin)) {
-//                 // Si EOF est reçu, l'utilisateur a appuyé sur CTRL+D pour quitter
-//                 if (chat_data->prestige_mode) {
-//                     printf("You pressed CTRL+D. Exiting the chat.\n");
-//                 }
-//                 terminateProgram(false, chat_data);
-//             } else {
-//                 // Pour toute autre erreur, quittez avec une erreur fatale
-//                 perror("\nError reading from stdin");
-//                 terminateProgram(true, chat_data);
-//             }
-//         }
-
-//         signalsMonitor(chat_data);
-
-//         // Verifie si seul '\n' a ete introduit afin qu'il soit ignorer
-//         if (read_input > 0) {
-//             printf("PASSE ICI 1\n");
-//             if (read_input != 1 || chat_data->sending_buffer[0] != '\n') {
-//                 if (!chat_data->bot_mode) {
-//                     displayUsernames(true, chat_data);
-//                     printf("%s", chat_data->sending_buffer);
-//                 }
-
-//                 if (chat_data->manual_mode) {
-//                     displayPendingMessages(chat_data);
-//                 }
-
-//                 for (size_t i = 0; i < (size_t)read_input; i++) {
-//                     if (fputc(chat_data->sending_buffer[i], chat_data->writing_stream) == EOF) {
-//                         printf("PASSE ICI 2\n");
-//                         signalsMonitor(chat_data); // Verifie si EOF est en raison d'un signal
-//                         perror("\nFailed to use stream for writing");
-//                         terminateProgram(true, chat_data);
-//                     }
-//                 }
-//                 fflush(chat_data->writing_stream);
-//             }
-//         }
-
-//         signalsMonitor(chat_data);
-//     } while (true);
-// }
-
-
 void mainProcessHandler(ChatData* chat_data) {
-    // Partie pour lancer la communication (ouverture du pipe d'écriture)
+    // Partie pour lancer la communication (ouverture du pipe d'ecriture)
     int fd_user1_user2_write;
     do {
         signalsMonitor(chat_data);
@@ -648,66 +561,68 @@ void mainProcessHandler(ChatData* chat_data) {
     chat_data->writing_stream = fdopen(fd_user1_user2_write, "w");
     if (chat_data->writing_stream == NULL) {
         perror("\nFailed to convert file descriptor to stream for writing");
-        close(fd_user1_user2_write);
+        close(fd_user1_user2_write); // Doit quand meme fermer le descripteur de fichier
         terminateProgram(true, chat_data);
     }
 
-    chat_data->pipes_opened = true;
+    chat_data->pipes_opened = true; // Pipes ouverts
 
+    // Partie du chat
     if (chat_data->prestige_mode) {
         printf("%s joined the chat.\n", chat_data->user2);
     }
 
-    // Lecture via read au lieu de getline
-    char buffer[1024];
-    ssize_t read_input;
-
-    while (true) {
+    do {
         signalsMonitor(chat_data);
 
-        // Lecture d'une ligne de texte introduite depuis le terminal avec read()
-        read_input = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
-        
+        // Lecture d'une ligne de texte introduite depuis le terminal
+        ssize_t read_input = getline(&chat_data->sending_buffer, &chat_data->sending_buffer_size, stdin);
+
+        // Un point de controle pour savoir si la lecture du terminal a ete interrompue par un signal ou CTRL+D
         if (read_input == -1) {
-            if (errno == EINTR) {
-                // Si la lecture a été interrompue par un signal, vérifier les signaux et continuer
-                signalsMonitor(chat_data);
-                continue;
-            } else {
-                perror("\nError reading from stdin");
-                terminateProgram(true, chat_data);
+            if (feof(stdin)) {
+                // C'est un EOF donc l'utilisateur a utilise CTRL+D indiquant qu'il ne va plus ecrire sur stdin
+                if (chat_data->prestige_mode) {
+                    printf("You pressed CTRL+D.\n");
+                }
+                terminateProgram(false, chat_data);
             }
-        } else if (read_input == 0) {
-            // Si EOF est reçu (CTRL+D), quitter proprement
-            if (chat_data->prestige_mode) {
-                printf("You pressed CTRL+D. Exiting the chat.\n");
+            else if (errno == EINTR) {
+                signalsMonitor(chat_data); // Verifie si l'interruption est en raison d'un signal
+                // Si le signal (SIGINT en mode manuel) ne termine pas le programme
+                // On nettoie le flux pour reprendre une execution normale
+                clearerr(stdin);
             }
-            terminateProgram(false, chat_data);
         }
 
-        // Traiter l'entrée utilisateur
-        buffer[read_input] = '\0'; // Ajouter le caractère de fin de chaîne
-        if (read_input > 0 && (read_input != 1 || buffer[0] != '\n')) {
-            if (!chat_data->bot_mode) {
-                displayUsernames(true, chat_data);
-                printf("%s", buffer);
-            }
 
-            if (chat_data->manual_mode) {
-                displayPendingMessages(chat_data);
-            }
+        signalsMonitor(chat_data);
 
-            // Écriture du message dans le pipe
-            if (fputs(buffer, chat_data->writing_stream) == EOF) {
-                signalsMonitor(chat_data);
-                perror("\nFailed to use stream for writing");
-                terminateProgram(true, chat_data);
+        // Verifie si seul '\n' a ete introduit afin qu'il soit ignorer
+        if (read_input > 0) {
+            if (read_input != 1 || chat_data->sending_buffer[0] != '\n') {
+                if (!chat_data->bot_mode) {
+                    displayUsernames(true, chat_data);
+                    printf("%s", chat_data->sending_buffer);
+                }
+
+                if (chat_data->manual_mode) {
+                    displayPendingMessages(chat_data);
+                }
+
+                for (size_t i = 0; i < (size_t)read_input; i++) {
+                    if (fputc(chat_data->sending_buffer[i], chat_data->writing_stream) == EOF) {
+                        signalsMonitor(chat_data); // Verifie si EOF est en raison d'un signal
+                        perror("\nFailed to use stream for writing");
+                        terminateProgram(true, chat_data);
+                    }
+                }
+                fflush(chat_data->writing_stream);
             }
-            fflush(chat_data->writing_stream);
         }
 
         signalsMonitor(chat_data);
-    }
+    } while (true);
 }
 
 
