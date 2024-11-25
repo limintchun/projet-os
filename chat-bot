@@ -69,7 +69,7 @@ function chat-bot() {
     if [[ -e "$file" && -r "$file" ]]; then
       # commande de base corrigée par l' IA pour pouvoir comprendre tout les mots suivant le préfixé purpose
       local res=$(awk -v word="$word" '$1 == word {for(i=2; i<=NF; i++) printf "%s ", $i; print ""}' "$file")
-      if [[ -z $res ]]; then
+      if [[ -z "$res" ]]; then
         echo -e "\xF0\x9F\xA4\x96 ?">&"$stdin"
       else
         echo "$res" >&"$stdin"
@@ -93,16 +93,16 @@ function chat-bot() {
     # Vérifier si la coproc a bien démarré
     if [[ $? -ne 0 ]]; then
       echo "Erreur dans l'exécution de la commande coproc" >&2
-      [[ -n "${CHAT_PIPES[0]}" ]] && exec {CHAT_PIPES[0]}>&-
-      [[ -n "${CHAT_PIPES[1]}" ]] && exec {CHAT_PIPES[1]}>&-
+      [[ -n "${CHAT_PIPES[0]}" ]] && exec "${CHAT_PIPES[0]}" >&-
+      [[ -n "${CHAT_PIPES[1]}" ]] && exec "${CHAT_PIPES[1]}" >&-
       exit 1
     fi
   }
 
   # Créer le coprocessus pour l'exécution du programme
   create_coproc "$programme"
-  stdout=${CHAT_PIPES[0]}
-  stdin=${CHAT_PIPES[1]}
+  stdout="${CHAT_PIPES[0]}"
+  stdin="${CHAT_PIPES[1]}"
 
   while read -r line <&"$stdout"; do
 
