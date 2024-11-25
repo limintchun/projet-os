@@ -104,7 +104,7 @@ function chat-bot() {
   stdout=${CHAT_PIPES[0]}
   stdin=${CHAT_PIPES[1]}
 
-   while read -r line <&"$stdout"; do
+  while read -r line <&"$stdout"; do
 
     local cleaned_command=$(echo "$line" | sed 's/^[^:]*: //')
 
