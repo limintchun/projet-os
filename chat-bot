@@ -78,7 +78,6 @@ function chat-bot() {
     else
       echo "Le fichier $file n'a pas pu être ouvert." >&"$stdin"
     fi
-
   }
 
   # Enregistrement des commandes dans le dictionnaire
@@ -98,9 +97,9 @@ function chat-bot() {
       [[ -n "${CHAT_PIPES[1]}" ]] && exec {CHAT_PIPES[1]}>&-
       exit 1
     fi
-   }
+  }
 
-  # Créer la coproc pour l'exécution du programme
+  # Créer le coprocessus pour l'exécution du programme
   create_coproc "$programme"
   stdout=${CHAT_PIPES[0]}
   stdin=${CHAT_PIPES[1]}
