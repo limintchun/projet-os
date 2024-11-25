@@ -35,6 +35,7 @@ function chat-bot() {
       done
     fi
   }
+
   function au_revoir() {
     # libère la mémoire des variables non locales
     unset stdout
