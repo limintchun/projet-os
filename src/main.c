@@ -1,5 +1,5 @@
 // KAHOUACHE Ayman 000545130
-// MIN-TCHUN Li 000590125
+// LI Min-Tchun 000590125
 // PERERA GONZALEZ Maxence 000590023
 // Novembre 2024
 // INFO-F201 - Systeme d'exploitation
