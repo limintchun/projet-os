@@ -124,8 +124,8 @@ function chat-bot() {
       find_word "liste-bot.txt" "$cleaned_command"
     fi
       unset file
-  done  
+  done
 }
 
-# lance le programme avec les arguments fournis 
+# lance le programme avec les arguments fournis
 chat-bot "$@"
