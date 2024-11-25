@@ -1,80 +1,75 @@
 #!/bin/bash
-
 # aide pour les commandes bash et scripts: https://devhints.io/bash
 # aide pour dictionnaire "associative array": https://fr.cyberaxe.org/articles/bash-associative-array
 # aide lecture fichier et vérif: https://fr.linux-console.net/?p=22916
-# documentation pour sed et les expressions régulières: https://www.shellunix.com/regexp.html#:~:text=Les%20expresions%20r%C3%A9guli%C3%A8res%2># documentation pour awk: https://fr.linux-console.net/?p=20194
+# documentation pour sed et les expressions régulières: https://www.shellunix.com/regexp.html#:~:text=Les%20expresions%20r%C3%A9guli%C3%A8res%2>
 
 function chat-bot() {
   if [[ $# -lt 1 || $# -gt 2 ]]; then
-    echo ""chat-bot destinataire [pseudo]"" >&2
+    echo "chat-bot destinataire [pseudo]" >&2
     exit 1
   fi
 
   local username="$1"
   local botname="${2:-"bot"}"   # Valeur par défaut pour le bot si non spécifiée
-
+  # j'assigne les valeurs juste pour y voir plus clair
   # il faut bien vérifier que le nom du programme compilé est chat
-  local programme="./chat $2 $1 --bot"
-  # lancer le programme parallèle a Alice bot dans ce script
+  local programme="./chat $botname $username --bot"
+
   # Création d'un dictionnaire (associative array)
   declare -A commands
 
   # Définition des fonctions associées aux commandes
-
   function qui_suis_je() {
-    echo "Vous êtes $username" >&"$stdin"
+    echo "$username" >&"$stdin"
   }
 
   function li_fichier() {
     # Le fichier est récupéré après le nettoyage de la commande
     local file="$1"
     # local sert à la gestion de la mémoire car à la fin de la fonction la variable est supprimée
-
     if [[ -e "$file" && -r "$file" ]]; then
-      while IFS= read -r line; do
+      data="$(cat "$file")"
+      for line in $data; do
         echo "$line" >&"$stdin"
-      done < "$file"
-
-    else
-      echo "Le fichier $file n'existe pas." >&"$stdin"
+      done
     fi
   }
-
-
   function au_revoir() {
-    echo "Chat terminé">&"$stdin"
     # libère la mémoire des variables non locales
     unset stdout
     unset stdin
     unset file
     # fermer les descripteurs de fichiers
-    exec {CHAT_PIPES[0]}>&- 
-    exec {CHAT_PIPES[1]}>&-
+    exec "${CHAT_PIPES[0]}">&-
+    exec "${CHAT_PIPES[1]}">&-
     exit 0
   }
 
   function liste() {
     local files
+    # J'utilise sort pour m'assurer que l'ordre soit toujours le même
     files=$(ls -1 | sort)
     while IFS= read -r file; do
       echo "$file " >&"$stdin"
     done <<< "$files"
   }
-
+   
   function find_word() {
     # le mot-clé local indique que la variable sera libérée à la fin de la fonction
     local file="$1"
     local word="$2"
     if [[ -e "$file" && -r "$file" ]]; then
-      # commande de base corrigée par l' IA pour pouvoir comprendre tout les mots suivant le préfixé purpose
+      # commande de base corrigée par l' IA pour pouvoir comprendre tout les mots suivant le préfixe word
+      # awk fonctionne en divisant les chaines à l'aide de "ESPACE" que awk ne considère pas comme un caractère.
+      # Il me semble plus utile de faire cela pour récupérer les "suffixes" et "préfixes" plûtot que de couper la chaine avec cut ou sed
       local res=$(awk -v word="$word" '$1 == word {for(i=2; i<=NF; i++) printf "%s ", $i; print ""}' "$file")
       if [[ -z "$res" ]]; then
+        # -e permet de traiter la chaine de caractère comme caractères d'échappement
         echo -e "\xF0\x9F\xA4\x96 ?">&"$stdin"
       else
         echo "$res" >&"$stdin"
       fi
-
     else
       echo "Le fichier $file n'a pas pu être ouvert." >&"$stdin"
     fi
@@ -85,7 +80,6 @@ function chat-bot() {
   commands[qui suis-je]="qui_suis_je"
   commands[au revoir]="au_revoir"
   commands[li]="li_fichier"
-
   # Fonction pour créer une coproc (coprocessus) et exécuter le programme
   function create_coproc() {
     local programme="$1"
@@ -93,8 +87,10 @@ function chat-bot() {
     # Vérifier si la coproc a bien démarré
     if [[ $? -ne 0 ]]; then
       echo "Erreur dans l'exécution de la commande coproc" >&2
-      [[ -n "${CHAT_PIPES[0]}" ]] && exec "${CHAT_PIPES[0]}" >&-
-      [[ -n "${CHAT_PIPES[1]}" ]] && exec "${CHAT_PIPES[1]}" >&-
+      # verifie d'abord si les file descriptor ont été créés puis uniquement les supprime
+      [[ -n "${CHAT_PIPES[0]}" ]] && exec "${CHAT_PIPES[0]}">&-
+      [[ -n "${CHAT_PIPES[1]}" ]] && exec "${CHAT_PIPES[1]}">&-
+      # on quitte le programme le coprocessus n'a pas su être lancé c'est une erreur critique
       exit 1
     fi
   }
@@ -103,25 +99,25 @@ function chat-bot() {
   create_coproc "$programme"
   stdout="${CHAT_PIPES[0]}"
   stdin="${CHAT_PIPES[1]}"
-
   while read -r line <&"$stdout"; do
-
-    local cleaned_command=$(echo "$line" | sed 's/^[^:]*: //')
-
+    local cleaned_command=$(echo "$line" | sed 's/^[^ ]* //')
+    length="${#cleaned_command}"
+    echo "La longueur de cleaned_command est : $length"
     # update1; seule solution trouvée pour identifier si la commande est "li" est de séparer les parties de l'input
 
     local command=$(echo "$cleaned_command" | awk '{print $1}')
     file=$(echo "$cleaned_command" | awk '{print $2}')
 
     if [[ "$command" == "li" ]]; then
-      ${commands[$command]} "$file"
+      "${commands[$command]}" "$file"
 
     elif [[ -n "${commands[$cleaned_command]}" ]]; then
       # Exécution de la commande associée
-      ${commands[$cleaned_command]}
+      "${commands[$cleaned_command]}"
 
     else
       find_word "liste-bot.txt" "$cleaned_command"
+
     fi
       unset file
   done
@@ -129,3 +125,4 @@ function chat-bot() {
 
 # lance le programme avec les arguments fournis
 chat-bot "$@"
+
