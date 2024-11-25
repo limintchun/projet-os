@@ -123,7 +123,7 @@ function chat-bot() {
     else
       find_word "liste-bot.txt" "$cleaned_command"
     fi
-  unset file
+      unset file
   done  
 }
 
