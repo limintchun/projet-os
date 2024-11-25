@@ -30,7 +30,7 @@ function chat-bot() {
     # local sert à la gestion de la mémoire car à la fin de la fonction la variable est supprimée
     if [[ -e "$file" && -r "$file" ]]; then
       data="$(cat "$file")"
-      for line in $data; do
+      for line in "$data"; do
         echo "$line" >&"$stdin"
       done
     fi
