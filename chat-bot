@@ -82,8 +82,11 @@ function chat-bot() {
   commands[au revoir]="au_revoir"
   commands[li]="li_fichier"
   # Fonction pour créer une coproc (coprocessus) et exécuter le programme
+
   function create_coproc() {
     local programme="$1"
+    # eval est mot clé qui va évaluer si la variable est une commannde et va l'exécuter commme si elle était tapée dans un terminal
+    # coproc lance le processus en arrière plan
     coproc CHAT_PIPES { eval "$programme"; }
     # Vérifier si la coproc a bien démarré
     if [[ $? -ne 0 ]]; then
