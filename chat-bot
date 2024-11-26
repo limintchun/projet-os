@@ -105,8 +105,6 @@ function chat-bot() {
   stdin="${CHAT_PIPES[1]}"
   while read -r line <&"$stdout"; do
     local cleaned_command=$(echo "$line" | sed 's/^[^ ]* //')
-    length="${#cleaned_command}"
-    echo "La longueur de cleaned_command est : $length"
     # update1; seule solution trouvée pour identifier si la commande est "li" est de séparer les parties de l'input
 
     local command=$(echo "$cleaned_command" | awk '{print $1}')
