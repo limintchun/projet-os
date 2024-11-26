@@ -64,7 +64,7 @@ function chat-bot() {
       # commande de base corrigée par l' IA pour pouvoir comprendre tout les mots suivant le préfixe word
       # awk fonctionne en divisant les chaines à l'aide de "ESPACE" que awk ne considère pas comme un caractère.
       # Il me semble plus utile de faire cela pour récupérer les "suffixes" et "préfixes" plûtot que de couper la chaine avec cut ou sed
-      local res=$(awk -v word="$word" '$1 == word {for(i=2; i<=NF; i++) printf "%s ", $i; print ""}' "$file")
+      local res=$(awk -v word="$word" '$1 == word {for(i=2; i<=NF; i++) printf "%s", $i; print ""}' "$file")
       if [[ -z "$res" ]]; then
         # -e permet de traiter la chaine de caractère comme caractères d'échappement
         echo -e "\xF0\x9F\xA4\x96 ?">&"$stdin"
