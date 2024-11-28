@@ -91,6 +91,26 @@ void sigintMonitor(ChatData* chat_data) {
 }
 
 
+void sigtermWaitAndClean(ChatData* chat_data) {
+    // Initialisation de SIGTERM en tant que signal a attendre
+    sigset_t sigterm_wait_set;
+    sigemptyset(&sigterm_wait_set);
+    sigaddset(&sigterm_wait_set, SIGTERM);
+
+    int sigterm_signal;
+    // Attendre le signal SIGTERM
+    if (sigwait(&sigterm_wait_set, &sigterm_signal) != 0) {
+        perror("\nSigwait failed in the second process");
+    }
+
+    cleanSharedMemory(chat_data);
+    cleanStreamsBuffers(chat_data);
+    
+    // Quitter le processus secondaire
+    exit(KILL_PROCESS_CODE);
+}
+
+
 void sigtermMonitor(ChatData* chat_data) {
     if (sigterm_catched) {
         cleanSharedMemory(chat_data);
