@@ -93,6 +93,7 @@ void sigintMonitor(ChatData* chat_data) {
 
 void sigtermMonitor(ChatData* chat_data) {
     if (sigterm_catched) {
+        cleanSharedMemory(chat_data);
         cleanStreamsBuffers(chat_data);
         exit(KILL_PROCESS_CODE);
     }
