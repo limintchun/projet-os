@@ -100,7 +100,7 @@ void sigtermWaitAndClean(ChatData* chat_data) {
     int sigterm_signal;
     // Attendre le signal SIGTERM
     if (sigwait(&sigterm_wait_set, &sigterm_signal) != 0) {
-        perror("\nSigwait failed in the second process");
+        perror("\nsigwait() failed in the second process");
     }
 
     cleanSharedMemory(chat_data);
