@@ -18,7 +18,7 @@
 #include <sys/stat.h>
 #include <unistd.h> 
 #include <sys/ipc.h> 
-#include <sys/shm.h>
+#include <sys/mman.h>
 #include <sys/wait.h>
 #include <signal.h>
 
@@ -34,10 +34,9 @@ void initializeChatData(ChatData* chat_data) {
     chat_data->pipes_opened = false;
     chat_data->second_process_pid = -1;
 
-    chat_data->shared_memory_segment_id = -1;
-    chat_data->shared_memory = NULL;
     chat_data->writing_stream = NULL;
     chat_data->reading_stream = NULL;
+    chat_data->shared_memory = NULL;
     chat_data->sending_buffer = NULL;
     chat_data->sending_buffer_size = 0;
     chat_data->receiving_buffer = NULL;
@@ -69,38 +68,30 @@ void initializePipes(ChatData* chat_data) {
 
 
 void initializeSharedMemory(ChatData* chat_data) {
-    chat_data->shared_memory_segment_id = shmget(IPC_PRIVATE, SHARED_MEMORY_SIZE, IPC_CREAT | 0666);
-    if (chat_data->shared_memory_segment_id == -1) {
-        perror("\nFailed to create shared memory");
+    // void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset);
+    // NULL pour selection automatique d'une adresse pour le segment
+    // int prot : PROT_READ | PROT_WRITE ; autorisations pour lire et ecrire dans la memoire partagee
+    // int flags : MAP_SHARED ; chaque processus peut voir les modifications faites par les autres
+    // int falgs : MAP_ANONYMOUS ; memoire partagee uniquement entre les processus sans utiliser un fichier
+    // int fd : -1 car aucun fichier a mapper
+    // off_t offset : offset mais ignore car il n'y a pas de fichier a mapper
+    chat_data->shared_memory = mmap(NULL, SHARED_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (chat_data->shared_memory == MAP_FAILED) {
+        perror("\nFailed to map (create) shared memory");
         terminateProgram(true, chat_data);
     }
-    chat_data->shared_memory = (char*)shmat(chat_data->shared_memory_segment_id, NULL, 0);
-    if (chat_data->shared_memory == (void*)-1) {
-        perror("\nFailed to attach shared memory");
-        terminateProgram(true, chat_data);
-    }
+    
+    // Initialiser la memoire partagee vide
     memset(chat_data->shared_memory, 0, SHARED_MEMORY_SIZE);
 }
 
 
 void cleanSharedMemory(ChatData* chat_data) {
     if (chat_data->shared_memory != NULL) {
-        if (shmdt(chat_data->shared_memory) == -1) {
-            perror("\nFailed to detach shared memory");
+        if (munmap(chat_data->shared_memory, SHARED_MEMORY_SIZE) == -1) {
+           perror("\nFailed to unmap (remove) shared memory");
         }
         chat_data->shared_memory = NULL;
-    }
-    if (chat_data->shared_memory_segment_id != -1) {
-        struct shmid_ds info;
-        if (shmctl(chat_data->shared_memory_segment_id, IPC_STAT, &info) == -1) {
-            perror("\nError ; shared memory segment to remove does not exist or is inaccessible");
-        } 
-        else {
-            if (shmctl(chat_data->shared_memory_segment_id, IPC_RMID, NULL) == -1) {
-                perror("\nFailed to remove shared memory");
-            } 
-        }
-        chat_data->shared_memory_segment_id = -1;
     }
 }
 
