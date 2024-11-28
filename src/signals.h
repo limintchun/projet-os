@@ -20,6 +20,7 @@ void initializeSignalsHandler();
 void ignoreSigint();
 void signalsHandler(int signal);
 void sigintMonitor(ChatData* chat_data);
+void sigtermWaitAndClean(ChatData* chat_data);
 void sigtermMonitor(ChatData* chat_data);
 void sigpipeMonitor(ChatData* chat_data);
 void sigusrMonitor(ChatData* chat_data);
