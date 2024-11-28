@@ -32,6 +32,7 @@ void mainProcessHandler(ChatData* chat_data) {
         terminateProgram(true, chat_data);
     }
 
+    // Convertir le file descriptor en FILE* stream
     chat_data->writing_stream = fdopen(fd_user1_user2_write, "w");
     if (chat_data->writing_stream == NULL) {
         perror("\nFailed to convert file descriptor to stream for writing");
@@ -41,11 +42,11 @@ void mainProcessHandler(ChatData* chat_data) {
 
     chat_data->pipes_opened = true; // Pipes ouverts
 
-    // Partie du chat
     if (chat_data->prestige_mode) {
         printf("%s joined the chat.\n", chat_data->user2);
     }
 
+    // Partie du chat
     do {
         signalsMonitor(chat_data);
 
@@ -67,34 +68,37 @@ void mainProcessHandler(ChatData* chat_data) {
                 // On nettoie le flux pour reprendre une execution normale
                 clearerr(stdin);
             }
+            else {
+                perror("\nFailed to getline() the stdin in the main process");
+                terminateProgram(true, chat_data);
+            }
         }
-// ajouter une gestion d'une erreur
-// enter a considerer
 
         signalsMonitor(chat_data);
 
-        // Verifie si seul '\n' a ete introduit afin qu'il soit ignorer
         if (read_input > 0) {
-            if (read_input != 1 || chat_data->sending_buffer[0] != '\n') {
-                if (!chat_data->bot_mode) {
-                    displayUsernames(true, chat_data);
-                    printf("%s", chat_data->sending_buffer);
-                }
-
-                if (chat_data->manual_mode) {
-                    displayPendingMessages(chat_data);
-                }
-
-                for (size_t i = 0; i < (size_t)read_input; i++) {
-                    // diff EOF error
-                    if (fputc(chat_data->sending_buffer[i], chat_data->writing_stream) == EOF) {
-                        signalsMonitor(chat_data); // Verifie si EOF est en raison d'un signal
-                        perror("\nFailed to use stream for writing");
-                        terminateProgram(true, chat_data);
-                    }
-                }
-                fflush(chat_data->writing_stream);
+            if (!chat_data->bot_mode) {
+                displayUsernames(true, chat_data);
+                printf("%s", chat_data->sending_buffer);
             }
+
+            if (chat_data->manual_mode) {
+                displayPendingMessages(chat_data);
+            }
+
+            // Ecriture caractere par caractere dans le stream
+            for (size_t i = 0; i < (size_t)read_input; i++) {
+                // diff EOF error
+                if (fputc(chat_data->sending_buffer[i], chat_data->writing_stream) == EOF) {
+                    // Il n'y a pas besoin de verifier les differents cas (EOF, signals, etc.)
+                    // Theoriquement SIGPIPE est deja catch donc il n'y a pas besoin de verifier FEOF
+                    signalsMonitor(chat_data); // On verifie si c'est SIGPIPE, SIGINT ou SIGUSR
+                    // Si on passe ici, c'est qu'il s'agit d'une erreur fatale
+                    perror("\nFailed to use stream for writing in the main process");
+                    terminateProgram(true, chat_data);
+                }
+            }
+            fflush(chat_data->writing_stream); // Forcer la transmission immediate des donnees
         }
 
         signalsMonitor(chat_data);
