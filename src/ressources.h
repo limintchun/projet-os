@@ -45,7 +45,6 @@ typedef struct {
     // Ressources partagees necessitant un clean ; pipes, memoire partagee, gestion dynamique des messages
     char pipe_user1_user2[PIPE_NAME_SIZE];
     char pipe_user2_user1[PIPE_NAME_SIZE];
-    int shared_memory_segment_id;
     char* shared_memory;
     FILE* writing_stream;
     FILE* reading_stream;
