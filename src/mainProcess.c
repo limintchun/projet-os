@@ -88,7 +88,6 @@ void mainProcessHandler(ChatData* chat_data) {
 
             // Ecriture caractere par caractere dans le stream
             for (size_t i = 0; i < (size_t)read_input; i++) {
-                // diff EOF error
                 if (fputc(chat_data->sending_buffer[i], chat_data->writing_stream) == EOF) {
                     // Il n'y a pas besoin de verifier les differents cas (EOF, signals, etc.)
                     // Theoriquement SIGPIPE est deja catch donc il n'y a pas besoin de verifier FEOF
