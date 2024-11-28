@@ -30,26 +30,21 @@ void secondProcessHandler(ChatData* chat_data) {
     if (fd_user2_user1_read == -1) {
         perror("\nFailed to open the user2 to user1 pipe (reading pipe)");
         kill(getppid(), SIGUSR1);
-        while (true) {
-            sigtermMonitor(chat_data);
-        }
+        sigtermWaitAndClean(chat_data);
     }
 
+    // Convertir le file descriptor en FILE* stream
     chat_data->reading_stream = fdopen(fd_user2_user1_read, "r");
     if (chat_data->reading_stream == NULL) {
         perror("Failed to convert file descriptor to stream for reading");
         close(fd_user2_user1_read); // Doit quand meme fermer le descripteur de fichier
         kill(getppid(), SIGUSR1);
-        while (true) {
-            sigtermMonitor(chat_data);
-        }
+        sigtermWaitAndClean(chat_data);
     }
 
     chat_data->pipes_opened = true; // Pipes ouverts
 
     // Partie du chat
-    size_t index = 0;
-
     do {
         sigtermMonitor(chat_data);
 
@@ -62,45 +57,38 @@ void secondProcessHandler(ChatData* chat_data) {
                 // Signaler au pere que user2 a quitte le chat
                 // Le pere ne devrait pas avoir besoin d'ecrire un message de plus apres la fermeture pour catch SIGPIPE
                 kill(getppid(), SIGPIPE);
-                // sigwait meilleur
-                while (true) {
-                    sigtermMonitor(chat_data);
-                }
-            } else if (ferror(chat_data->reading_stream)) {
-                // En cas d'erreur de flux
-                perror("\nFailed to read the stream");
+                sigtermWaitAndClean(chat_data);
+            } 
+            else if (ferror(chat_data->reading_stream)) {
+                // En cas d'erreur du flux
+                perror("\nFailed to read in the stream in the second process");
                 kill(getppid(), SIGUSR1);
-                while (true) {
-                    sigtermMonitor(chat_data);
-                }
+                sigtermWaitAndClean(chat_data);
             }
         }
 
-        // Augmentation dynamique de la taille du tampon
+        // Augmentation dynamique de la taille du tampon pour stocker le caractere lu
         // +1 pour le nouveau caractere lu
         // +1 pour '\0' indiquant la terminaison de la chaine en construction
         char* new_buffer = realloc(chat_data->receiving_buffer, chat_data->receiving_buffer_size + 2);
         if (new_buffer == NULL) {
             perror("\nFaild to allocate memory in the second process");
             kill(getppid(), SIGUSR1);
-            while (true) {
-                sigtermMonitor(chat_data);
-            }
+            sigtermWaitAndClean(chat_data);
         }
 
         // Mise a jour du pointeur du tampon
         chat_data->receiving_buffer = new_buffer;
 
         // Ajout du caractere au tampon
-        // On indique la prochaine position pour ecrire le prochain caractere
         // Mise a jour de sa taille pour "correspondre" au nouvel ajout
-        chat_data->receiving_buffer[index++] = (char)c;
+        chat_data->receiving_buffer[chat_data->receiving_buffer_size] = (char)c;
         chat_data->receiving_buffer_size++;
 
+        // \n permet de savoir qu'on a un message complet
         if (c == '\n') {
-            // Le enter permet de savoir que la fin du message est atteinte et donc on a un message complet
             // Le tampon termine par '\0' indiquant la fin de la chaine
-            chat_data->receiving_buffer[index] = '\0';
+            chat_data->receiving_buffer[chat_data->receiving_buffer_size] = '\0';
             if (chat_data->manual_mode) {
                 printf("\a");
                 storeMessageInSharedMemory(chat_data->receiving_buffer, chat_data);
@@ -114,7 +102,6 @@ void secondProcessHandler(ChatData* chat_data) {
             free(chat_data->receiving_buffer); 
             chat_data->receiving_buffer = NULL;
             chat_data->receiving_buffer_size = 0;
-            index = 0;
         }
 
         sigtermMonitor(chat_data);
