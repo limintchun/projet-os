@@ -1,30 +1,46 @@
 TOPDIR  := ./
-SRCDIR  := $(TOPDIR)src/
-OBJDIR  := $(TOPDIR)obj/
-BINDIR  := $(TOPDIR)
-NAME    := chat
-EXE     := $(BINDIR)$(NAME)
+
+SRCDIR_CLIENT  := $(TOPDIR)src/chat/
+OBJDIR_CLIENT  := $(TOPDIR)obj/chat/
+BINDIR_CLIENT  := $(TOPDIR)
+NAME_CLIENT    := chat
+EXE_CLIENT     := $(BINDIR)$(NAME_CLIENT)
+
+SRCDIR_SERVEUR  := $(TOPDIR)src/serveur/
+OBJDIR_SERVEUR  := $(TOPDIR)obj/serveur/
+BINDIR_SERVEUR  := $(TOPDIR)
+NAME_SERVEUR    := serveur-chat
+EXE_SERVEUR     := $(BINDIR)$(NAME_SERVEUR)
 
 SFILES  := c
 OFILES  := o
 CC      := gcc
-CFLAGS  := -std=gnu11 -Wall -Wextra -O2 -Wpedantic -g -fsanitize=address,undefined
+CFLAGS  := -Wall -Wextra -O3 -std=gnu2x -pedantic -march=native -Wnull-dereference -Winline -Wconversion -pthread -flto -pipe -g -fsanitize=address,undefined
 LIBS    := -fsanitize=address,undefined
 
-SOURCES := $(shell find $(SRCDIR) -name "*.$(SFILES)")
-OBJECTS := $(patsubst $(SRCDIR)%.$(SFILES), $(OBJDIR)%.$(OFILES), $(SOURCES))
+SOURCES_CLIENT := $(shell find $(SRCDIR_CLIENT) -name "*.$(SFILES)")
+OBJECTS_CLIENT := $(patsubst $(SRCDIR_CLIENT)%.$(SFILES), $(OBJDIR_CLIENT)%.$(OFILES), $(SOURCES_CLIENT))
 
-ALLFILES := $(SOURCES)
+SOURCES_SERVEUR := $(shell find $(SRCDIR_SERVEUR) -name "*.$(SFILES)")
+OBJECTS_SERVEUR := $(patsubst $(SRCDIR_SERVEUR)%.$(SFILES), $(OBJDIR_SERVEUR)%.$(OFILES), $(SOURCES_SERVEUR))
+
+ALLFILES := $(SOURCES_CLIENT) $(SOURCES_SERVEUR)
 
 .PHONY: all clean
 
-all: $(EXE)
+all: $(EXE_CLIENT) $(EXE_SERVEUR)
 
-$(EXE): $(OBJECTS)
+$(EXE_CLIENT): $(OBJECTS_CLIENT)
 	$(CC) $^ -o $@ $(LIBS)
 
-$(OBJDIR)%$(OFILES): $(SRCDIR)%$(SFILES)
+$(EXE_SERVEUR): $(OBJECTS_SERVEUR)
+	$(CC) $^ -o $@ $(LIBS)
+
+$(OBJDIR_CLIENT)%$(OFILES): $(SRCDIR_CLIENT)%$(SFILES)
+	$(CC) $(CFLAGS) $< -c -o $@
+
+$(OBJDIR_SERVEUR)%$(OFILES): $(SRCDIR_SERVEUR)%$(SFILES)
 	$(CC) $(CFLAGS) $< -c -o $@
 
 clean:
-	@rm -f $(OBJECTS) $(EXE)
+	@rm -f $(OBJDIR_CLIENT) $(OBJDIR_SERVEUR) $(EXE_CLIENT) $(EXE_SERVEUR)
