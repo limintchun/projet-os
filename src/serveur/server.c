@@ -17,7 +17,7 @@ int main() {
 
     // Ajout d'option au socket, comme la capacité de réutiliser une adresse ou un port
     int opt = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < -1) {
         perror("setsockopt()");
         close(server_fd);
         return 1;
@@ -31,7 +31,7 @@ int main() {
     // Récupération de la variable d'environnement pour le port
     char *local_port = getenv("PORT_SERVEUR"); // En bash, utilisez export PORT_SERVEUR=1234
     if (local_port == NULL) {
-        fprintf(stderr, "Port non initialisé. Utilisez la variable d'environnement PORT_SERVEUR.\n");
+        fprintf(stderr, "PORT_SERVEUR non initialisé. Utilisez la variable d'environnement PORT_SERVEUR.\n");
         close(server_fd);
         return 1;
     }
@@ -41,7 +41,7 @@ int main() {
     if (port >= 1 && port <= 65535) {
         address.sin_port = htons(port); // Convertir en format réseau
     } else {
-        fprintf(stderr, "Port invalide. Utilisation du port par défaut : 1234.\n");
+        fprintf(stderr, "PORT_SERVEUR invalide. Utilisation du port par défaut : 1234.\n");
         address.sin_port = htons(1234); // Port par défaut
     }
  // Liaison du socket à une adresse et un port
