@@ -31,9 +31,9 @@ int main() {
     // Récupération de la variable d'environnement pour le port
     char *local_port = getenv("PORT_SERVEUR"); // En bash, utilisez export PORT_SERVEUR=1234
     if (local_port == NULL) {
-        fprintf(stderr, "PORT_SERVEUR non initialisé. Utilisez la variable d'environnement PORT_SERVEUR.\n");
-        close(server_fd);
-        return 1;
+        printf("PORT_SERVEUR non initialisé. PORT_SERVEUR défini à 1234\n");
+        address.sin_port = htons(1234);
+        local_port = "1234";
     }
 
     // Conversion de la variable d'environnement en entier et validation
@@ -41,10 +41,11 @@ int main() {
     if (port >= 1 && port <= 65535) {
         address.sin_port = htons(port); // Convertir en format réseau
     } else {
-        fprintf(stderr, "PORT_SERVEUR invalide. Utilisation du port par défaut : 1234.\n");
+        printf("PORT_SERVEUR invalide. Utilisation du port par défaut : 1234.\n");
         address.sin_port = htons(1234); // Port par défaut
     }
- // Liaison du socket à une adresse et un port
+
+    // Liaison du socket à une adresse et un port
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("bind()");
         close(server_fd);
@@ -78,7 +79,7 @@ int main() {
         close(server_fd);
         return 1;
     }
-   printf("Message reçu : %s\n", buffer);
+    printf("Message reçu : %s\n", buffer);
 
     // Fermeture des sockets
     close(new_socket);

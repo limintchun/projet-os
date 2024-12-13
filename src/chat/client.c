@@ -7,17 +7,17 @@
 #include <stdlib.h>     // getenv(), atoi()
 
 int main() {
-   
+
     // Initialisation du socket
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         perror("socket()");
         return 1;
     }
-   
+
     // Initialisation des paramètres de l'adresse
     struct sockaddr_in serv_addr;
-    memset(&serv_addr, 0, sizeof(serv_addr)); // Assurez-vous que tous les champs sont bien initialisés
+    // memset(&serv_addr, 0, sizeof(serv_addr)); // Assurez-vous que tous les champs sont bien initialisés
     serv_addr.sin_family = AF_INET;
 
     // Récupération des variables d'environnement
@@ -26,34 +26,30 @@ int main() {
 
     // Configuration de l'adresse IP
     if (local_ip == NULL) {
-        fprintf(stderr, "IP_SERVEUR non initialisée. Utilisation de l'IP par défaut : 127.0.0.1\n");
-        if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-            perror("inet_pton() pour l'adresse par défaut");
-            close(sock);
-            return 1;
+        printf("IP_SERVEUR non initialisée. L'adresse ip est initialisé par défaut à 127.0.0.1\n");
+        inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr);
+    }
+    else {
+        if (inet_pton(AF_INET, local_ip, &serv_addr.sin_addr) == 1) {
+            inet_pton(AF_INET, local_ip, &serv_addr.sin_addr);
         }
-    } else {
-        if (inet_pton(AF_INET, local_ip, &serv_addr.sin_addr) <= 0) {
-            fprintf(stderr, "Adresse IP non valide. Utilisation de l'IP par défaut : 127.0.0.1\n");
-            if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-                perror("inet_pton() pour l'adresse par défaut");
-                close(sock);
-                return 1;
-            }
+        else if (inet_pton(AF_INET, local_ip, &serv_addr.sin_addr) == 0){
+            inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr);
         }
     }
-   
+
     // Configuration du port
     if (local_port == NULL) {
-        fprintf(stderr, "PORT_SERVEUR non initialisé. Utilisation du port par défaut : 1234\n");
+        printf("PORT_SERVEUR non initialisé. PORT_SERVEUR défini à 1234\n");
         serv_addr.sin_port = htons(1234);
-    } else {
+    }
+    else {
         int port = atoi(local_port);
         if (port >= 1 && port <= 65535) {
-            serv_addr.sin_port = htons(port); // Conversion en format réseau
+            serv_addr.sin_port = htons(port); // Convertir en format réseau
         } else {
-            fprintf(stderr, "Port non valide. Utilisation du port par défaut : 1234\n");
-            serv_addr.sin_port = htons(1234);
+            printf("PORT_SERVEUR invalide. Utilisation du port par défaut : 1234.\n");
+            serv_addr.sin_port = htons(1234); // Port par défaut
         }
     }
 
@@ -74,7 +70,7 @@ int main() {
         close(sock);
         return 1;
     }
-  // Fermeture du socket
+    //  Fermeture du socket
     close(sock);
     return 0;
 }
