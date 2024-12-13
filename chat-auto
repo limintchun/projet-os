@@ -1,2 +1,33 @@
 #!/bin/bash
+# Lorsque le script sera appelé, il y aura une première demande pour définir user.
+# Ensuite si read retourne 1 le if inversera la valeur pour exécuter la condition
+# et redemander un input pour séléctionner l'user.
+# Chaque tour de boucle identifie si il y a bien un message et le redirige à chat pour l'envoi au serveur
+# jusqu'au moment où le programme est quitté
 
+
+function chat_auto() {
+  read -p "Veuillez entrer le pseudo de votre correspondant : " user
+
+  while true; do
+    # read renvoie 0 si un message est lu, 1 si le message est vide
+    # je veux que si rien n'est détecté, la personne sélectionne un nouvel user
+
+    if ! read -p "" message; then
+      read -p "Veuillez entrer le pseudo de votre correspondant : " user
+
+      if [[ -z "$user" ]]; then
+        exit 0
+      fi
+
+    else
+      echo "$user $message" | ./chat
+    fi
+
+  done
+
+  return 0;
+
+}
+
+chat_auto
