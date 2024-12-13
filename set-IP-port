@@ -8,12 +8,10 @@ function set_IP_port() {
   echo "Le port défini est : $port"
   echo "L'IP définie est : $ip"
 
-  export IP_SERVER ip
-  export PORT_SERVER port
+  export IP_SERVER="$ip"
+  export PORT_SERVER="$port"
 
   return 0
 }
 
 set_IP_port
-
-
