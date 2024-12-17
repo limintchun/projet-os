@@ -14,11 +14,12 @@ pthread_mutex_t lock;
 void* write_thread(void* arg) {
     int sock = *(int*)arg;
     char message[1024];
+    // while peut être modifié plus tard pour écrire plus lomgptemps mais alors la récéption de message plus possible 
     while (1) {
         printf("Entrez un message : ");
         scanf("%s", message);
 
-        // Verrouiller le mutex avant d'écrire
+        // Verrouiller le mutex avant d'écrire pour réserver le socket et empecher les problèmes de concurence
         pthread_mutex_lock(&lock);
         if (write(sock, message, strlen(message)) < 0) {
             perror("write()");
@@ -37,6 +38,7 @@ void* read_thread(void* arg) {
         // Verrouiller le mutex avant de lire
         pthread_mutex_lock(&lock);
         int bytes_read = read(sock, buffer, sizeof(buffer) - 1);
+        // cas d'erreur 
         if (bytes_read < 0) {
             perror("read()");
         } else {
