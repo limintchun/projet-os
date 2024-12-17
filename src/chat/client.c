@@ -12,12 +12,12 @@ pthread_mutex_t lock;
 
 // Fonction pour le thread d'écriture
 void* write_thread(void* arg) {
-    int sock = *(int*)arg;
-    char message[1024];
+    int sock = *(int*)arg; //cast du arg en integer
+    char message[1024]; //taille du message
     // while peut être modifié plus tard pour écrire plus lomgptemps mais alors la récéption de message plus possible 
     while (1) {
         printf("Entrez un message : ");
-        scanf("%s", message);
+        scanf("%s", message); //scanf recupere n messafe 
 
         // Verrouiller le mutex avant d'écrire pour réserver le socket et empecher les problèmes de concurence
         pthread_mutex_lock(&lock);
@@ -32,17 +32,17 @@ void* write_thread(void* arg) {
 
 // Fonction pour le thread de lecture
 void* read_thread(void* arg) {
-    int sock = *(int*)arg;
-    char buffer[1024];
+    int sock = *(int*)arg; 
+    char buffer[1024]; //taille message 
     while (1) {
         // Verrouiller le mutex avant de lire
         pthread_mutex_lock(&lock);
         int bytes_read = read(sock, buffer, sizeof(buffer) - 1);
         // cas d'erreur 
-        if (bytes_read < 0) {
+        if (bytes_read < 0) { 
             perror("read()");
         } else {
-            buffer[bytes_read] = '\0';
+            buffer[bytes_read] = '\0'; // dectecte si un message est recu du serveur 
             printf("Message du serveur : %s\n", buffer);
         }
         // Déverrouiller le mutex après la lecture
@@ -61,10 +61,10 @@ int main() {
 
     // Initialisation des paramètres de l'adresse
     struct sockaddr_in serv_addr;
-    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_family = AF_INET; 
 
     // Récupération des variables d'environnement
-    char *local_ip = getenv("IP_SERVEUR");
+    char *local_ip = getenv("IP_SERVEUR"); 
     char *local_port = getenv("PORT_SERVEUR");
 
     // Configuration de l'adresse IP
