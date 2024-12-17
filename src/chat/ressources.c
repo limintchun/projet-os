@@ -26,7 +26,6 @@
 // CODE
 void initializeChatData(ChatData* chat_data) {
     chat_data->user1 = NULL;
-    chat_data->user2 = NULL;
     chat_data->manual_mode = false;
     chat_data->bot_mode = false;
     chat_data->prestige_mode = false;
@@ -44,27 +43,29 @@ void initializeChatData(ChatData* chat_data) {
 }
 
 
-void initializePipes(ChatData* chat_data) {
-    if (snprintf(chat_data->pipe_user1_user2, PIPE_NAME_SIZE, "/tmp/%s-%s.chat", 
-                chat_data->user1, chat_data->user2) >= PIPE_NAME_SIZE) {
-        fprintf(stderr, "Error ; pipe user1 to user2 name exceeds buffer size.\n");
-        terminateProgram(true, chat_data);
-    }
-    if (snprintf(chat_data->pipe_user2_user1, PIPE_NAME_SIZE, "/tmp/%s-%s.chat", 
-                chat_data->user2, chat_data->user1) >= PIPE_NAME_SIZE) {
-        fprintf(stderr, "Error ; pipe user2 to user1 name exceeds buffer size.\n");
-        terminateProgram(true, chat_data);
-    }
+// pas de pipes mais peut servir pour initialiser le socket client
 
-    if (mkfifo(chat_data->pipe_user1_user2, 0666) == -1 && errno != EEXIST) {
-        perror("\nmkfifo() error ; pipe user1 to user2 hasn't been created");
-        terminateProgram(true, chat_data);
-    }
-    if (mkfifo(chat_data->pipe_user2_user1, 0666) == -1 && errno != EEXIST) {
-        perror("\nmkfifo() error ; pipe user2 to user1 hasn't been created");
-        terminateProgram(true, chat_data);
-    }
-}
+//void initializePipes(ChatData* chat_data) {
+  //  if (snprintf(chat_data->pipe_user1_user2, PIPE_NAME_SIZE, "/tmp/%s-%s.chat", 
+    //            chat_data->user1, chat_data->user2) >= PIPE_NAME_SIZE) {
+      //  fprintf(stderr, "Error ; pipe user1 to user2 name exceeds buffer size.\n");
+//        //terminateProgram(true, chat_data);
+  //  }
+    //if (snprintf(chat_data->pipe_user2_user1, PIPE_NAME_SIZE, "/tmp/%s-%s.chat", 
+     //           chat_data->user2, chat_data->user1) >= PIPE_NAME_SIZE) {
+       // fprintf(stderr, "Error ; pipe user2 to user1 name exceeds buffer size.\n");
+        //terminateProgram(true, chat_data);
+//    }
+
+  //  if (mkfifo(chat_data->pipe_user1_user2, 0666) == -1 && errno != EEXIST) {
+     //   perror("\nmkfifo() error ; pipe user1 to user2 hasn't been created");
+   //     terminateProgram(true, chat_data);
+  //  }
+    //if (mkfifo(chat_data->pipe_user2_user1, 0666) == -1 && errno != EEXIST) {
+      //  perror("\nmkfifo() error ; pipe user2 to user1 hasn't been created");
+        //terminateProgram(true, chat_data);
+    //}
+//}
 
 
 void initializeSharedMemory(ChatData* chat_data) {
@@ -96,18 +97,7 @@ void cleanSharedMemory(ChatData* chat_data) {
 }
 
 
-void cleanPipes(ChatData* chat_data) {
-    if (access(chat_data->pipe_user1_user2, F_OK) == 0) {
-        if (unlink(chat_data->pipe_user1_user2) == -1) {
-            perror("\nFailed to remove the pipe user1 to user2");
-        }
-    }
-    if (access(chat_data->pipe_user2_user1, F_OK) == 0) {
-        if (unlink(chat_data->pipe_user2_user1) == -1) {
-            perror("\nFailed to remove the pipe user2 to user1");
-        }
-    }
-}
+// pas besoin de clean les sockets
 
 
 void cleanStreamsBuffers(ChatData* chat_data) {
