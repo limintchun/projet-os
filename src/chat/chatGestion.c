@@ -34,11 +34,11 @@ bool parseUsernames(char* username) {
 
 
 void parseArgv(int argc, char* argv[], ChatData* chat_data) {
-    if (3 > argc)  {
-        fprintf(stderr, "chat pseudo_utilisateur pseudo_destinataire [--bot] [--manuel]\n");
+    if (2 > argc)  {
+        fprintf(stderr, "chat pseudo_utilisateur [--bot] [--manuel]\n");
         exit(ARGV_CODE);
     }
-    for (int i = 1; i < 3; i++) {
+    for (int i = 1; i < 2; i++) {
         if (strlen(argv[i]) > MAX_LENGTH_USERNAME) {
             fprintf(stderr, "Error ; the maximum length of usernames is 30.\n");
             exit(LENGTH_USERNAME_CODE);
@@ -49,9 +49,8 @@ void parseArgv(int argc, char* argv[], ChatData* chat_data) {
         }
     }
     chat_data->user1 = argv[1];
-    chat_data->user2 = argv[2];
 
-    if (3 < argc) {
+    if (2 < argc) {
         for (int i = 3; i < argc; i++) {
             if (strcmp(argv[i], BOT_MODE) == 0) {
                 chat_data->bot_mode = true;
@@ -75,15 +74,11 @@ void displayUsernames(bool oneself, ChatData* chat_data) {
     if (chat_data->bot_mode && oneself) {
         printf("[%s] ", chat_data->user1);
     }
-    else if (chat_data->bot_mode && !oneself) {
-        printf("[%s] ", chat_data->user2);
-    }
-    else if (!chat_data->bot_mode && oneself) {
+
+    else (!chat_data->bot_mode && oneself) {
         printf("[\x1b[31m\x1B[4m%s\x1B[0m\x1b[0m] ", chat_data->user1);
     }
-    else {
-        printf("[\x1b[31m\x1B[4m%s\x1B[0m\x1b[0m] ", chat_data->user2);
-    }
+
 }
 
 
