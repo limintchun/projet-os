@@ -26,7 +26,6 @@
 // CODE
 void initializeChatData(ChatData* chat_data) {
     chat_data->user1 = NULL;
-    chat_data->user2 = NULL;
     chat_data->manual_mode = false;
     chat_data->bot_mode = false;
     chat_data->prestige_mode = false;
@@ -96,20 +95,23 @@ void cleanSharedMemory(ChatData* chat_data) {
 }
 
 
-void cleanPipes(ChatData* chat_data) {
-    if (access(chat_data->pipe_user1_user2, F_OK) == 0) {
-        if (unlink(chat_data->pipe_user1_user2) == -1) {
-            perror("\nFailed to remove the pipe user1 to user2");
-        }
-    }
-    if (access(chat_data->pipe_user2_user1, F_OK) == 0) {
-        if (unlink(chat_data->pipe_user2_user1) == -1) {
-            perror("\nFailed to remove the pipe user2 to user1");
-        }
-    }
-}
+// Pas besoin de clean un socket --> bidirictionnel
+
+//void clean_socket(ChatData* chat_data) {
+  //  if (access(chat_data->pipe_user1_user2, F_OK) == 0) {
+    //    if (unlink(chat_data->pipe_user1_user2) == -1) {
+      //      perror("\nFailed to remove the pipe user1 to user2");
+        //}
+   // }
+    //if (access(chat_data->pipe_user2_user1, F_OK) == 0) {
+      //  if (unlink(chat_data->pipe_user2_user1) == -1) {
+        //    perror("\nFailed to remove the pipe user2 to user1");
+        //}
+   // }
+//}
 
 
+// sera utilise avec le mutex
 void cleanStreamsBuffers(ChatData* chat_data) {
     if (chat_data->writing_stream != NULL) {
         fclose(chat_data->writing_stream);
@@ -131,6 +133,7 @@ void cleanStreamsBuffers(ChatData* chat_data) {
 }
 
 
+// remplacer procees_pid par un thread
 void terminateProgram(bool is_error, ChatData* chat_data) {
     // Kill le processus fils que s'il existe
     if (chat_data->second_process_pid > 0) {
@@ -140,7 +143,6 @@ void terminateProgram(bool is_error, ChatData* chat_data) {
 
     // Clean de toutes les ressources
     cleanSharedMemory(chat_data);
-    cleanPipes(chat_data);
     cleanStreamsBuffers(chat_data);
 
     // Terminaison avec le code adapte
