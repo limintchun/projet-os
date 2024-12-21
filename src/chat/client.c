@@ -11,12 +11,16 @@
 pthread_mutex_t lock;
 
 // Fonction pour le thread d'écriture
-void* write_thread(void* arg) {
-    int sock = *(int*)arg;
+void* write_thread(int sock) {
     char message[1024];
-    //while (1) {
-        scanf("%s", message);
+    while (1) {
+        printf("Entrez un msg :\n");
+        if (fgets(message, sizeof(message), stdin) != NULL) {
+            perror("fgets()");
+        }
+        // scanf("%s", message);
 
+        message[strcspn(message, "\n")] = '\0';
         // Verrouiller le mutex avant d'écrire
         //pthread_mutex_lock(&lock);
         if (write(sock, message, strlen(message)) < 0) {
@@ -24,7 +28,7 @@ void* write_thread(void* arg) {
         }
         // Déverrouiller le mutex après l'écriture
         //pthread_mutex_unlock(&lock);
-    //}
+    }
     return NULL;
 }
 
@@ -106,18 +110,17 @@ int main() {
     }
 
     // Créer les threads
-    pthread_t writer, reader;
-    if (pthread_create(&writer, NULL, write_thread, &sock) != 0) {
-        printf("Échec de la création du thread d'écriture\n");
-       return 1;
-    }
+    // fonction lancée lancé par le thread d'origine aka main()
+    write_thread(sock);
+
+    // fonction lancée par le second thread
+    pthread_t reader;
     if (pthread_create(&reader, NULL, read_thread, &sock) != 0) {
         printf("Échec de la création du thread de lecture\n");
         return 1;
     }
 
     // Attendre la fin des threads
-    pthread_join(writer, NULL);
     pthread_join(reader, NULL);
 
     // Détruire le mutex

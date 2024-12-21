@@ -6,7 +6,41 @@
 #include <string.h>      // memset()
 #include <pthread.h> // pthread_t, pthread_create(), pthread_join()
 
+#include "server.h"
+
+#define DEFAULT_PORT 1234
 #define MAX_SIZE 1024
+#define MAX_CLIENT 1000
+#define MAX_CHAR 30
+#define DECONNECTED 0
+#define CONNECTED 1 
+
+client_t clients[MAX_CLIENT];
+int count = 0;
+
+// on initialise une liste de client en partant du principe qu'ils ne sont pas encore connecté
+void initializeClients() {
+    for (int i = 0; i < MAX_CLIENT; i++) {
+        clients[i].connect = DECONNECTED;
+        clients[i].socket_fd = -1;
+    }
+}
+
+void addClients(int client_fd, struct sockaddr_in client_addr) {
+    socklen_t addrlen = sizeof(client_addr);
+    count ++;
+    if (clients[count].connect == 0) {
+        clients[count].socket_fd = client_fd;
+        clients[count].addr = client_addr;
+        clients[count].connect = CONNECTED;
+    }
+}
+// faire une fonction cherchant le client + socket correspondant
+void searchClient(char message[MAX_SIZE], struct sockaddr_in client_addr) {
+    for (int i = 0; i < MAX_CLIENT; i++) {
+        // clients[count].port = 
+    }
+}
 
 int create_socket() {
     // Initialisation du socket
@@ -18,26 +52,26 @@ int create_socket() {
 
     // Ajout d'option au socket, comme la capacité de réutiliser une adresse ou un port
     int opt = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < -1) {
         perror("setsockopt()");
         close(server_fd);
         return -1;
     }
-    
+
     return server_fd;
 }
 
-void initialize_adress_data(struct sockaddr_in *address) {
+void initialize_address_data(struct sockaddr_in *address) {
     // Initialisation de la structure contenant les informations du socket
     memset(address, 0, sizeof(*address)); // Remplissage initial à 0 pour éviter les erreurs
     address->sin_family = AF_INET;         // Toujours AF_INET pour les adresses Internet
     address->sin_addr.s_addr = INADDR_ANY; // Écouter sur toutes les interfaces réseau disponibles
 
     // Récupération de la variable d'environnement pour le port
-    char *local_port = getenv("PORT_SERVEUR"); // En bash, utilisez export PORT_SERVEUR=1234
+    char *local_port = getenv("PORT_SERVEUR"); // En bash, utilisez export VARIABLE=VALEUR
     if (local_port == NULL) {
         printf("PORT_SERVEUR non initialisé. PORT_SERVEUR défini à 1234\n");
-        address->sin_port = htons(1234);
+        address->sin_port = htons(DEFAULT_PORT);
         local_port = "1234";
     }
 
@@ -47,7 +81,7 @@ void initialize_adress_data(struct sockaddr_in *address) {
         address->sin_port = htons(port); // Convertir en format réseau
     } else {
         printf("PORT_SERVEUR invalide. Utilisation du port par défaut : 1234.\n");
-        address->sin_port = htons(1234); // Port par défaut
+        address->sin_port = htons(DEFAULT_PORT); // Port par défaut
     }
 }
 
@@ -82,11 +116,11 @@ int link_to_client(int server_fd, struct sockaddr_in *address) {
 
 
 // je reprend la même fct que dans client sauf que le serveur ne devra pas afficher les message mais les rediriger dans un autre socket
-void* write_thread(void* arg) {
-    int sock = *(int*)arg;
-    char message[1024];
+void* write_thread(void* server_fd) {
+    int sock = *(int*)server_fd;
+    char message[MAX_SIZE];
     //while (1) {
-        scanf("%s", message);
+        // scanf("%s", message);
         // Verrouiller le mutex avant d'écrire
         //pthread_mutex_lock(&lock);
         if (write(sock, message, strlen(message)) < 0) {
@@ -99,9 +133,9 @@ void* write_thread(void* arg) {
 }
 
 // Fonction pour le thread de lecture
-void* read_thread(void* arg) {
-    int sock = *(int*)arg;
-    char buffer[1024];
+void* read_thread(void* client_fd) {
+    int sock = *(int*)client_fd;
+    char buffer[MAX_SIZE];
     //while (1) {
         // Verrouiller le mutex avant de lire
         //pthread_mutex_lock(&lock);
@@ -116,41 +150,4 @@ void* read_thread(void* arg) {
       //  pthread_mutex_unlock(&lock);
     //}
     return NULL;
-}
-
-int main() {
-    // Vérification dans main, le message d'erreur sera écrit dans perror donc on aura l'historique
-    int server_fd = create_socket();
-    if (server_fd < 0) { return 1; }
-    
-    // Création d'une struct pour contenir les données
-    struct sockaddr_in address;
-    initialize_adress_data(&address);
-
-    // Lien avec le client
-    int new_socket = link_to_client(server_fd, &address);
-    if (new_socket < 0) {
-        return 1;
-    }
-    
-    
- 	pthread_t writer, reader;
-    if (pthread_create(&writer, NULL, write_thread, &new_socket) != 0) {
-        printf("Échec de la création du thread d'écriture\n");
-       return 1;
-    }
-    if (pthread_create(&reader, NULL, read_thread, &new_socket) != 0) {
-        printf("Échec de la création du thread de lecture\n");
-        return 1;
-    }
-
-    // Attendre la fin des threads
-    pthread_join(writer, NULL);
-    pthread_join(reader, NULL);
-
-    // Fermeture des sockets
-    close(new_socket);
-    close(server_fd);
-
-    return 0;
 }
